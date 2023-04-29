@@ -11,6 +11,7 @@ Buildenv::Buildenv(const std::string &cxxflags) : cxxflags(cxxflags) {}
 void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
     std::map<std::string,std::string>::iterator end = env.end();
     std::map<std::string,std::string>::iterator musl_bootstrap = end;
+    std::map<std::string,std::string>::iterator libcpp_bootstrap = end;
     std::map<std::string,std::string>::iterator cflags_iter = end;
     std::map<std::string,std::string>::iterator cxxflags_iter = end;
     std::map<std::string,std::string>::iterator ldflags_iter = end;
@@ -21,6 +22,8 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
         std::transform(key.begin(), key.end(), key.begin(), [] (auto c) { return std::tolower(c); });
         if (key == "musl_bootstrap") {
             musl_bootstrap = iterator;
+        } else if (key == "libcpp_bootstrap") {
+            libcpp_bootstrap = iterator;
         } else if (key == "cflags") {
             cflags_iter = iterator;
         } else if (key == "cxxflags") {
@@ -53,12 +56,18 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
     bool add_ldflags{false};
     bool add_ld_library_path{false};
     if (musl_bootstrap != end) {
-        std::string musl_cflags = " -nostdinc -isystem ";
+        std::string musl_cflags = " --sysroot=";
         musl_cflags.append(musl_bootstrap->second);
-        musl_cflags.append("/usr/include ");
+        musl_cflags.append(" ");
+        auto musl_cxxflags = musl_cflags;
+        musl_cxxflags.append("-isystem ");
+        musl_cxxflags.append(musl_bootstrap->second);
+        musl_cxxflags.append("/usr/include ");
         musl_cflags.append(cflags);
+        musl_cxxflags.append(cxxflags);
         cflags = musl_cflags;
-        cxxflags = musl_cflags;
+        cxxflags = musl_cxxflags;
+
         add_cflags = true;
         add_cxxflags = true;
 
@@ -84,6 +93,15 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
         }
         ld_library_path = muslld;
         add_ld_library_path = true;
+    }
+    if (libcpp_bootstrap != end) {
+        std::string musl_cxxflags{" -Wl,-lc++ -isystem "};
+        musl_cxxflags.append(musl_bootstrap->second);
+        musl_cxxflags.append("/usr/include/c++/v1 ");
+        musl_cxxflags.append(cxxflags);
+        cxxflags = musl_cxxflags;
+
+        add_cxxflags = true;
     }
     if (!(this->cxxflags.empty())) {
         cxxflags.append(" ");

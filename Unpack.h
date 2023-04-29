@@ -8,6 +8,8 @@
 #include "Fork.h"
 
 class Unpack : private Fork {
+private:
+    std::string fileList;
 public:
     Unpack(std::string path, std::string destdir);
 };

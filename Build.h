@@ -28,6 +28,7 @@ class Build {
     std::string tooling;
     /* bootstrap: */
     std::string libc;
+    std::string libcpp;
     std::vector<std::string> bootstrap;
     std::vector<std::string> staticBootstrap;
     /* normal: */
@@ -38,9 +39,10 @@ class Build {
     std::vector<std::string> staticConfigureParams;
     std::vector<std::string> patches;
     bool configureDefaultParameters;
+    bool configureStaticOverrides;
     bool valid;
 public:
-    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), bootstrap(), staticBootstrap(), cxxflags(), buildTargets(), configureParams(), staticConfigureParams(), installTargets(), patches(), valid(false) {}
+    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), bootstrap(), staticBootstrap(), cxxflags(), buildTargets(), configureParams(), staticConfigureParams(), installTargets(), patches(), configureStaticOverrides(false), valid(false) {}
     Build(const std::shared_ptr<const Port> &port, path buildfile);
 private:
     void ReplaceVars(std::string &str) const;

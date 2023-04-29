@@ -98,7 +98,7 @@ void Distfile::Extract(const Ports &ports, const path &iBuildDir) const {
             }
             Exec exec{"tar"};
             std::vector<std::string> args{};
-            args.push_back("xzvf");
+            args.push_back("xzf");
             args.push_back(filename);
             auto env = Exec::getenv();
             exec.exec(args, env);
@@ -117,7 +117,7 @@ void Distfile::Extract(const Ports &ports, const path &iBuildDir) const {
             }
             Exec exec{"tar"};
             std::vector<std::string> args{};
-            args.push_back("xvf");
+            args.push_back("xf");
             args.push_back(filename);
             auto env = Exec::getenv();
             exec.exec(args, env);

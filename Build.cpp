@@ -13,6 +13,8 @@
 #include "Buildenv.h"
 #include "Ports.h"
 #include "Unpack.h"
+#include "sha2alg.h"
+#include "FindLib.h"
 
 Build GetBuild(Ports &ports, const std::string &buildName) {
     std::string groupName{};
@@ -72,7 +74,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), bootstrap(), staticBootstrap(), cxxflags(), buildTargets(), installTargets(), configureParams(), patches(), configureDefaultParameters(true), valid(false) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), bootstrap(), staticBootstrap(), cxxflags(), buildTargets(), installTargets(), configureParams(), patches(), configureDefaultParameters(true), configureStaticOverrides(false), valid(false) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -145,6 +147,15 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                 auto &item = *iterator;
                 if (item.is_string()) {
                     libc = item;
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("libcpp");
+            if (iterator != jsonData.end()) {
+                auto &item = *iterator;
+                if (item.is_string()) {
+                    libcpp = item;
                 }
             }
         }
@@ -269,6 +280,16 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                                 }
                             }
                         }
+                        {
+                            auto iterator = configure.find("overrides");
+                            if (iterator != configure.end()) {
+                                auto &defparams = *iterator;
+                                if (defparams.is_boolean()) {
+                                    bool defparamsValue = defparams;
+                                    configureStaticOverrides = defparamsValue;
+                                }
+                            }
+                        }
                     }
                 }
                 if (staticItem.is_array()) {
@@ -308,24 +329,32 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
     valid = true;
 }
 
-void Build::ReplaceVars(std::string &str) const {
-    std::string workdirStr;
-    {
-        path workdir = port->GetRoot() / "work";
-        workdirStr = workdir;
-    }
+static void ReplaceVars(std::string &str, const std::string &key, const std::function<std::string ()> &valueFunc) {
     std::string::size_type pos = 0;
-    std::string key = "{WORKDIR}";
-    std::string value = workdirStr;
     while (true) {
         pos = str.find(key, pos);
         if (pos == std::string::npos) {
             break;
         }
         str.erase(pos, key.length());
+        std::string value = valueFunc();
         str.insert(pos, value);
         pos += value.length();
     }
+}
+
+void Build::ReplaceVars(std::string &str) const {
+    ::ReplaceVars(str, "{WORKDIR}", [this] () {
+        std::string workdirStr;
+        {
+            path workdir = port->GetRoot() / "work";
+            workdirStr = workdir;
+        }
+        return workdirStr;
+    });
+    ::ReplaceVars(str, "{STATIC_ZLIB}", [] () {
+        return FindLib("libz.a").Find();
+    });
 }
 
 std::string Build::GetName() const {
@@ -504,8 +533,16 @@ void Build::Configure(const std::vector<std::string> &flags) {
                 for (const std::string &param: configureParams) {
                     cmk.emplace_back(param);
                 }
+                if (staticBuild) {
+                    for (const std::string &param: staticConfigureParams) {
+                        cmk.emplace_back(param);
+                    }
+                }
                 if (configureDefaultParameters) {
                     cmk.emplace_back(builddir);
+                }
+                for (auto &param : cmk) {
+                    ReplaceVars(param);
                 }
                 auto env = Exec::getenv();
                 Buildenv buildenv{cxxflags};
@@ -524,21 +561,25 @@ void Build::Configure(const std::vector<std::string> &flags) {
 std::vector<std::filesystem::path> ListFiles(const std::filesystem::path &root,
                                              const std::function<bool (const std::filesystem::path &)> &match = [] (const std::filesystem::path &) {return true;}) {
     std::vector<std::filesystem::path> subitems{};
-    for (const auto &subitem : std::filesystem::directory_iterator{root}) {
-        std::string filename = subitem.path().filename();
-        if (filename == "." || filename == "..") {
-            continue;
-        }
-        if (!match(subitem.path())) {
-            continue;
-        }
-        subitems.emplace_back(filename);
-        if (is_directory(subitem)) {
-            for (const auto &subsubitem : ListFiles(subitem, match)) {
-                path p = filename / subsubitem;
-                subitems.emplace_back(p);
+    try {
+        for (const auto &subitem: std::filesystem::directory_iterator{root}) {
+            std::string filename = subitem.path().filename();
+            if (filename == "." || filename == "..") {
+                continue;
+            }
+            if (!match(subitem.path())) {
+                continue;
+            }
+            subitems.emplace_back(filename);
+            if (is_directory(subitem)) {
+                for (const auto &subsubitem: ListFiles(subitem, match)) {
+                    path p = filename / subsubitem;
+                    subitems.emplace_back(p);
+                }
             }
         }
+    } catch (...) {
+        return {};
     }
     return subitems;
 }
@@ -583,6 +624,11 @@ void Build::Make(const std::vector<std::string> &flags) {
                     std::cerr << "Bootstrap libc was not found: " << libc << "\n";
                     return 1;
                 }
+                auto libcppBuild = GetBuild(*ports, libcpp);
+                if (!libcppBuild.IsValid()) {
+                    std::cerr << "Bootstrap libcpp was not found: " << libcpp << "\n";
+                    return 1;
+                }
                 std::vector<Build> bootstrapBuilds{};
                 std::vector<Build> bootstrapStaticBuilds{};
                 for (const auto &bootstrapName : this->bootstrap) {
@@ -612,6 +658,9 @@ void Build::Make(const std::vector<std::string> &flags) {
                     bb.Package(staticFlags);
                     bb.Clean();
                 }
+                libcppBuild.Clean();
+                libcppBuild.Package();
+                libcppBuild.Clean();
                 build.Clean();
                 build.Package();
                 build.Clean();
@@ -729,6 +778,15 @@ void Build::Make(const std::vector<std::string> &flags) {
                     Unpack unpack{pkg, bootstrapdirStr};
                 }
                 {
+                    std::cout << "==> Unpacking preliminary libcpp to bootstrap\n";
+                    std::string pkg{libcppBuild.GetName()};
+                    pkg.append("-");
+                    pkg.append(libcppBuild.GetVersion());
+                    pkg.append(".pkg");
+                    pkg = builddir / pkg;
+                    Unpack unpack{pkg, bootstrapdirStr};
+                }
+                {
                     std::cout << "==> Unpacking static builds to bootstrap\n";
                     for (auto &bb : bootstrapStaticBuilds) {
                         std::string pkg{bb.GetName()};
@@ -741,6 +799,19 @@ void Build::Make(const std::vector<std::string> &flags) {
                     auto originalEnv = Exec::getenv();
                     auto env = originalEnv;
                     env.insert_or_assign("MUSL_BOOTSTRAP", bootstrapdirStr);
+                    Exec::setenv(env);
+                    std::cout << "==> Rebuilding libcpp\n";
+                    libcppBuild.Package();
+                    libcppBuild.Clean();
+                    {
+                        std::string pkg{libcppBuild.GetName()};
+                        pkg.append("-");
+                        pkg.append(libcppBuild.GetVersion());
+                        pkg.append(".pkg");
+                        pkg = builddir / pkg;
+                        Unpack unpack{pkg, bootstrapdirStr};
+                    }
+                    env.insert_or_assign("LIBCPP_BOOTSTRAP", bootstrapdirStr);
                     Exec::setenv(env);
                     std::cout << "==> Building and installing bootstrapping builds\n";
                     for (auto &bb : bootstrapBuilds) {
@@ -911,8 +982,45 @@ void Build::Package(const std::vector<std::string> &flags) {
     if (!exists(installdir) || !is_directory(installdir)) {
         throw BuildException("Install dir not found");
     }
-    std::string fileListStr = FileListString(ListFiles(installdir));
-    std::cout << fileListStr << "\n";
+    auto files = ListFiles(installdir);
+    std::string filesWHash{};
+    {
+        std::stringstream sstr{};
+        for (const auto &file: files) {
+            std::string sp = file;
+            path p = installdir / file;
+            if (is_directory(p)) {
+                sstr << "dir " << sp << "\n";
+            } else if (is_symlink(p)) {
+                sstr << "link " << sp << "\n";
+            } else {
+                std::fstream inputStream{};
+                inputStream.open(p, std::ios_base::in | std::ios_base::binary);
+                if (!inputStream.is_open()) {
+                    throw BuildException("Failed to open file for hashing");
+                }
+                sha256 hash{};
+                while (true) {
+                    sha256::chunk_type chunk;
+                    inputStream.read((char *) &(chunk[0]), sizeof(chunk));
+                    if (inputStream) {
+                        hash.Consume(chunk);
+                    } else {
+                        auto sz = inputStream.gcount();
+                        if (sz > 0) {
+                            hash.Final((uint8_t *) &(chunk[0]), sz);
+                        }
+                        break;
+                    }
+                }
+                std::string hex{hash.Hex()};
+                sstr << hex << " " << sp << "\n";
+            }
+        }
+        filesWHash = sstr.str();
+    }
+    std::cout << filesWHash;
+    std::string fileListStr = FileListString(files);
     Fork fork{[installdir] () {
         std::string directory = installdir;
         if (chdir(directory.c_str()) != 0) {
@@ -941,5 +1049,8 @@ void Build::Package(const std::vector<std::string> &flags) {
     if (!outputStream.is_open()) {
         throw BuildException("Failed to open package file for writing");
     }
+    uint32_t fileListLen = filesWHash.size();
+    outputStream.write((const char *) &fileListLen, sizeof(fileListLen));
+    outputStream.write(filesWHash.c_str(), fileListLen);
     fork >> outputStream;
 }
