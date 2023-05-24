@@ -27,17 +27,22 @@ constexpr const typeof(sizeof(binpaths)) numBinpaths = sizeof(binpaths) / sizeof
 
 Exec::Exec(const std::string &name) : bin() {
     bool binpathFound{false};
-    for (std::remove_const<typeof(numBinpaths)>::type i = 0; i < numBinpaths; i++) {
-        std::filesystem::path binpath = binpaths[i];
-        binpath = binpath / name;
-        if (exists(binpath) && is_regular_file(binpath)) {
-            bin = binpath;
-            binpathFound = true;
-            break;
+    if (name.starts_with("./") || name.starts_with("/")) {
+        bin = name;
+        binpathFound = true;
+    } else {
+        for (std::remove_const<typeof(numBinpaths)>::type i = 0; i < numBinpaths; i++) {
+            std::filesystem::path binpath = binpaths[i];
+            binpath = binpath / name;
+            if (exists(binpath) && is_regular_file(binpath)) {
+                bin = binpath;
+                binpathFound = true;
+                break;
+            }
         }
-    }
-    if (!binpathFound) {
-        throw ExecException("Binary not found");
+        if (!binpathFound) {
+            throw ExecException("Binary not found");
+        }
     }
 }
 

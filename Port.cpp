@@ -4,6 +4,7 @@
 
 #include "Port.h"
 #include "Build.h"
+#include <sstream>
 
 Port::Port(const std::shared_ptr<const PortGroup> &group, path groupRoot, std::string name) : group(group), root(groupRoot / name), name(name) {}
 

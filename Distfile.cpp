@@ -9,6 +9,9 @@
 #include "Exec.h"
 #include <iostream>
 #include <fstream>
+extern "C" {
+#include <unistd.h>
+}
 
 using path = std::filesystem::path;
 
@@ -123,6 +126,50 @@ void Distfile::Extract(const Ports &ports, const path &iBuildDir) const {
             exec.exec(args, env);
             return 0;
         }};
+        return;
+    }
+    if (name.ends_with(".tar.lz")) {
+        Fork fork{[buildDir] () {
+            {
+                std::string dir = buildDir.string();
+                if (chdir(dir.c_str()) != 0) {
+                    std::cerr << "chdir: build dir: " << dir << "\n";
+                    return 1;
+                }
+            }
+            Exec exec{"tar"};
+            std::vector<std::string> args{};
+            args.push_back("xf");
+            args.push_back("-");
+            auto env = Exec::getenv();
+            exec.exec(args, env);
+            return 0;
+        }, ForkInputOutput::INPUT};
+        Fork uncompress{[] () {
+            Exec exec{"lzip"};
+            std::vector<std::string> args{};
+            args.push_back("-d");
+            auto env = Exec::getenv();
+            exec.exec(args, env);
+            return 0;
+        }, ForkInputOutput::INPUTOUTPUT};
+        std::fstream inputStream{};
+        inputStream.open(filename, std::ios_base::in | std::ios_base::binary);
+        if (!inputStream.is_open()) {
+            throw DistfileException("Failed to open distfile for extract");
+        }
+        Fork xfer{[&fork, &uncompress] () {
+            uncompress.CloseInput();
+            fork << uncompress;
+            fork.CloseInput();
+            return 0;
+        }};
+        fork.CloseInput();
+        uncompress << inputStream;
+        uncompress.CloseInput();
+        xfer.Require();
+        uncompress.Require();
+        fork.Require();
         return;
     }
     throw DistfileException("Unknown format to extract");

@@ -11,9 +11,17 @@
 class Buildenv {
 private:
     std::string cxxflags;
+    std::string ldflags;
+    std::string sysrootCxxflags;
+    std::string sysrootLdflags;
+    std::string sysroot;
+    bool requiresClang;
 public:
-    Buildenv(const std::string &cxxflags);
+    Buildenv(const std::string &cxxflags, const std::string &ldflags, const std::string &sysrootCxxflags, const std::string &sysrootLdflags, bool requiresClang);
     void FilterEnv(std::map<std::string,std::string> &env);
+    std::string Sysroot() {
+        return sysroot;
+    }
 };
 
 

@@ -15,6 +15,10 @@
 #include "Unpack.h"
 #include "sha2alg.h"
 #include "FindLib.h"
+#include <sstream>
+extern "C" {
+#include <unistd.h>
+}
 
 Build GetBuild(Ports &ports, const std::string &buildName) {
     std::string groupName{};
@@ -74,7 +78,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), bootstrap(), staticBootstrap(), cxxflags(), buildTargets(), installTargets(), configureParams(), patches(), configureDefaultParameters(true), configureStaticOverrides(false), valid(false) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), installTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), patches(), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -160,6 +164,24 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
             }
         }
         {
+            auto iterator = jsonData.find("libcppHeaderBuild");
+            if (iterator != jsonData.end()) {
+                auto &item = *iterator;
+                if (item.is_string()) {
+                    libcppHeaderBuild = item;
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("requiresClang");
+            if (iterator != jsonData.end()) {
+                auto &item = *iterator;
+                if (item.is_boolean()) {
+                    requiresClang = item;
+                }
+            }
+        }
+        {
             auto iterator = jsonData.find("bootstrap");
             if (iterator != jsonData.end()) {
                 auto &bootstrapItem = *iterator;
@@ -183,6 +205,16 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                 if (item.is_string()) {
                     cxxflags = item;
                     ReplaceVars(cxxflags);
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("ldflags");
+            if (iterator != jsonData.end()) {
+                auto &item = *iterator;
+                if (item.is_string()) {
+                    ldflags = item;
+                    ReplaceVars(ldflags);
                 }
             }
         }
@@ -227,6 +259,34 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
             if (iterator != jsonData.end()) {
                 auto &configure = *iterator;
                 {
+                    auto iterator = configure.find("before");
+                    if (iterator != configure.end()) {
+                        auto &before = *iterator;
+                        if (before.is_array()) {
+                            auto iterator = before.begin();
+                            while (iterator != before.end()) {
+                                auto &cmd = *iterator;
+                                if (cmd.is_array()) {
+                                    std::vector<std::string> argv{};
+                                    auto iterator = cmd.begin();
+                                    while (iterator != cmd.end()) {
+                                        auto c = *iterator;
+                                        if (c.is_string()) {
+                                            std::string cstr = c;
+                                            argv.emplace_back(cstr);
+                                        }
+                                        ++iterator;
+                                    }
+                                    if (!argv.empty()) {
+                                        beforeConfigure.emplace_back(argv);
+                                    }
+                                }
+                                ++iterator;
+                            }
+                        }
+                    }
+                }
+                {
                     auto iterator = configure.find("parameters");
                     if (iterator != configure.end()) {
                         auto &parameters = *iterator;
@@ -250,6 +310,40 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                         if (defparams.is_boolean()) {
                             bool defparamsValue = defparams;
                             configureDefaultParameters = defparamsValue;
+                        }
+                    }
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("install");
+            if (iterator != jsonData.end()) {
+                auto &install = *iterator;
+                {
+                    auto iterator = install.find("after");
+                    if (iterator != install.end()) {
+                        auto &after = *iterator;
+                        if (after.is_array()) {
+                            auto iterator = after.begin();
+                            while (iterator != after.end()) {
+                                auto &cmd = *iterator;
+                                if (cmd.is_array()) {
+                                    std::vector<std::string> argv{};
+                                    auto iterator = cmd.begin();
+                                    while (iterator != cmd.end()) {
+                                        auto c = *iterator;
+                                        if (c.is_string()) {
+                                            std::string cstr = c;
+                                            argv.emplace_back(cstr);
+                                        }
+                                        ++iterator;
+                                    }
+                                    if (!argv.empty()) {
+                                        postInstall.emplace_back(argv);
+                                    }
+                                }
+                                ++iterator;
+                            }
                         }
                     }
                 }
@@ -306,6 +400,77 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
             }
         }
         {
+            auto iterator = jsonData.find("sysroot");
+            if (iterator != jsonData.end()) {
+                auto &sysrootItem = *iterator;
+                if (sysrootItem.is_object()) {
+                    {
+                        auto iterator = sysrootItem.find("configure");
+                        if (iterator != sysrootItem.end()) {
+                            auto &configure = *iterator;
+                            {
+                                auto iterator = configure.find("parameters");
+                                if (iterator != configure.end()) {
+                                    auto &parameters = *iterator;
+                                    if (parameters.is_array()) {
+                                        auto iterator = parameters.begin();
+                                        while (iterator != parameters.end()) {
+                                            auto &value = *iterator;
+                                            if (value.is_string()) {
+                                                std::string str = value;
+                                                sysrootConfigureParams.emplace_back(str);
+                                            }
+                                            ++iterator;
+                                        }
+                                    }
+                                }
+                            }
+                            {
+                                auto iterator = configure.find("overrides");
+                                if (iterator != configure.end()) {
+                                    auto &defparams = *iterator;
+                                    if (defparams.is_boolean()) {
+                                        bool defparamsValue = defparams;
+                                        configureSysrootOverrides = defparamsValue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    {
+                        auto iterator = sysrootItem.find("cxxflags");
+                        if (iterator != sysrootItem.end()) {
+                            auto &cxxflags = *iterator;
+                            if (cxxflags.is_string()) {
+                                sysrootCxxflags = cxxflags;
+                                ReplaceVars(sysrootCxxflags);
+                            }
+                        }
+                    }
+                    {
+                        auto iterator = sysrootItem.find("ldflags");
+                        if (iterator != sysrootItem.end()) {
+                            auto &ldflags = *iterator;
+                            if (ldflags.is_string()) {
+                                sysrootLdflags = ldflags;
+                                ReplaceVars(sysrootLdflags);
+                            }
+                        }
+                    }
+                    {
+                        auto iterator = sysrootItem.find("cmake");
+                        if (iterator != sysrootItem.end()) {
+                            auto &ldflags = *iterator;
+                            if (ldflags.is_string()) {
+                                sysrootCmake = ldflags;
+                                ReplaceVars(sysrootCmake);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        {
             auto iterator = jsonData.find("patches");
             if (iterator != jsonData.end()) {
                 auto &patches = *iterator;
@@ -354,6 +519,19 @@ void Build::ReplaceVars(std::string &str) const {
     });
     ::ReplaceVars(str, "{STATIC_ZLIB}", [] () {
         return FindLib("libz.a").Find();
+    });
+    ::ReplaceVars(str, "{SYSROOT}", [] () {
+        auto env = Exec::getenv();
+        std::string sysroot{};
+        for (const auto &pair : env) {
+            std::string key = pair.first;
+            std::transform(key.begin(), key.end(), key.begin(), [] (const char c) { return std::tolower(c); });
+            if (key == "sysroot") {
+                sysroot = pair.second;
+                continue;
+            }
+        }
+        return sysroot;
     });
 }
 
@@ -488,16 +666,64 @@ void Build::Configure(const std::vector<std::string> &flags) {
     if (tooling == Tooling::STATIC_FILES) {
         return;
     }
+    auto env = Exec::getenv();
+    Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
+    buildenv.FilterEnv(env);
+    std::string sysroot = buildenv.Sysroot();
     if (exists(builddir) && is_directory(builddir)) {
-        Fork f{[this, builddir, cmakeDir, tooling, staticBuild] () {
+        for (const auto &cmd : beforeConfigure) {
+            auto iterator = cmd.begin();
+            if (iterator == cmd.end()) {
+                continue;
+            }
+            auto cmdexec = *iterator;
+            ++iterator;
+            std::vector<std::string> args{};
+            while (iterator != cmd.end()) {
+                args.emplace_back(*iterator);
+                ++iterator;
+            }
+            Fork f{[&builddir, &cmdexec, &args, &env] () {
+                if (chdir(builddir.c_str()) != 0) {
+                    std::cerr << "chdir: build dir: " << builddir << "\n";
+                    return 1;
+                }
+                Exec e{cmdexec};
+                e.exec(args, env);
+                return 0;
+            }};
+            f.Require();
+        }
+        Fork f{[this, &builddir, &cmakeDir, &tooling, staticBuild, &env, &sysroot] () {
             if (tooling == Tooling::CONFIGURE) {
                 if (chdir(builddir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << builddir << "\n";
                     return 1;
                 }
-                Shell sh{};
+                std::string configureName;
+                for (auto diritem : std::filesystem::directory_iterator(builddir)) {
+                    std::string filename = diritem.path().filename();
+                    if (filename == "configure") {
+                        configureName = filename;
+                        break;
+                    }
+                    std::string lowercase = filename;
+                    std::transform(lowercase.begin(), lowercase.end(), lowercase.begin(), [] (const char c) { return std::tolower(c); });
+                    if (lowercase == "configure") {
+                        configureName = filename;
+                    }
+                }
+                if (configureName.empty()) {
+                    std::cerr << "error: configure script not found\n";
+                    return 1;
+                }
+                {
+                    std::string str{"./"};
+                    str.append(configureName);
+                    configureName = str;
+                }
+                Exec sh{configureName};
                 std::vector<std::string> conf{};
-                conf.emplace_back("./configure");
                 if (configureDefaultParameters) {
                     std::string prefix{"--prefix="};
                     prefix.append(this->prefix);
@@ -506,21 +732,31 @@ void Build::Configure(const std::vector<std::string> &flags) {
                 for (const std::string &param: configureParams) {
                     conf.emplace_back(param);
                 }
+                if (!sysroot.empty()) {
+                    for (const std::string &param : sysrootConfigureParams) {
+                        conf.emplace_back(param);
+                    }
+                }
                 if (staticBuild) {
                     for (const std::string &param: staticConfigureParams) {
                         conf.emplace_back(param);
                     }
                 }
-                auto env = Exec::getenv();
-                Buildenv buildenv{cxxflags};
-                buildenv.FilterEnv(env);
+                for (auto &param : conf) {
+                    ReplaceVars(param);
+                }
                 sh.exec(conf, env);
             } else if (tooling == Tooling::CMAKE) {
                 if (chdir(cmakeDir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << builddir << "\n";
                     return 1;
                 }
-                Exec exec{"cmake"};
+                std::string cmake{"cmake"};
+                if (!sysrootCmake.empty()) {
+                    cmake = sysrootCmake;
+                    ReplaceVars(cmake);
+                }
+                Exec exec{cmake};
                 std::vector<std::string> cmk{};
                 if (configureDefaultParameters) {
                     {
@@ -533,6 +769,11 @@ void Build::Configure(const std::vector<std::string> &flags) {
                 for (const std::string &param: configureParams) {
                     cmk.emplace_back(param);
                 }
+                if (!sysroot.empty()) {
+                    for (const std::string &param : sysrootConfigureParams) {
+                        cmk.emplace_back(param);
+                    }
+                }
                 if (staticBuild) {
                     for (const std::string &param: staticConfigureParams) {
                         cmk.emplace_back(param);
@@ -544,9 +785,6 @@ void Build::Configure(const std::vector<std::string> &flags) {
                 for (auto &param : cmk) {
                     ReplaceVars(param);
                 }
-                auto env = Exec::getenv();
-                Buildenv buildenv{cxxflags};
-                buildenv.FilterEnv(env);
                 exec.exec(cmk, env);
             }
             return 0;
@@ -571,7 +809,7 @@ std::vector<std::filesystem::path> ListFiles(const std::filesystem::path &root,
                 continue;
             }
             subitems.emplace_back(filename);
-            if (is_directory(subitem)) {
+            if (!is_symlink(subitem) && is_directory(subitem)) {
                 for (const auto &subsubitem: ListFiles(subitem, match)) {
                     path p = filename / subsubitem;
                     subitems.emplace_back(p);
@@ -624,6 +862,11 @@ void Build::Make(const std::vector<std::string> &flags) {
                     std::cerr << "Bootstrap libc was not found: " << libc << "\n";
                     return 1;
                 }
+                auto libcppHeaderOnlyBuild = GetBuild(*ports, libcppHeaderBuild);
+                if (!libcppHeaderOnlyBuild.IsValid()) {
+                    std::cerr << "Bootstrap libcpp header build was not found: " << libcpp << "\n";
+                    return 1;
+                }
                 auto libcppBuild = GetBuild(*ports, libcpp);
                 if (!libcppBuild.IsValid()) {
                     std::cerr << "Bootstrap libcpp was not found: " << libcpp << "\n";
@@ -631,13 +874,22 @@ void Build::Make(const std::vector<std::string> &flags) {
                 }
                 std::vector<Build> bootstrapBuilds{};
                 std::vector<Build> bootstrapStaticBuilds{};
-                for (const auto &bootstrapName : this->bootstrap) {
-                    auto build = GetBuild(*ports, bootstrapName);
-                    if (!build.IsValid()) {
-                        std::cerr << "Build " << bootstrapName << " not found.\n";
-                        throw BuildException("Build not found");
+                path bootstrapdir = builddir / "bootstrap";
+                std::string bootstrapdirStr = bootstrapdir;
+                {
+                    auto originalEnv = Exec::getenv();
+                    auto env = originalEnv;
+                    env.insert_or_assign("SYSROOT", bootstrapdirStr);
+                    Exec::setenv(env);
+                    for (const auto &bootstrapName: this->bootstrap) {
+                        auto build = GetBuild(*ports, bootstrapName);
+                        if (!build.IsValid()) {
+                            std::cerr << "Build " << bootstrapName << " not found.\n";
+                            throw BuildException("Build not found");
+                        }
+                        bootstrapBuilds.emplace_back(build);
                     }
-                    bootstrapBuilds.emplace_back(build);
+                    Exec::setenv(originalEnv);
                 }
                 for (const auto &bootstrapName : this->staticBootstrap) {
                     auto build = GetBuild(*ports, bootstrapName);
@@ -651,20 +903,23 @@ void Build::Make(const std::vector<std::string> &flags) {
                 for (auto &bb : bootstrapBuilds) {
                     bb.Fetch();
                 }
+                auto restoreEnv = Exec::getenv();
                 std::vector<std::string> staticFlags{};
                 staticFlags.emplace_back("static");
                 for (auto &bb : bootstrapStaticBuilds) {
                     bb.Clean();
                     bb.Package(staticFlags);
                     bb.Clean();
+                    Exec::setenv(restoreEnv);
                 }
-                libcppBuild.Clean();
-                libcppBuild.Package();
-                libcppBuild.Clean();
+                libcppHeaderOnlyBuild.Clean();
+                libcppHeaderOnlyBuild.Package();
+                libcppHeaderOnlyBuild.Clean();
+                Exec::setenv(restoreEnv);
                 build.Clean();
                 build.Package();
                 build.Clean();
-                path bootstrapdir = builddir / "bootstrap";
+                Exec::setenv(restoreEnv);
                 if (!exists(bootstrapdir)) {
                     if (!create_directory(bootstrapdir)) {
                         throw BuildException("Create bootstrapdir");
@@ -726,7 +981,6 @@ void Build::Make(const std::vector<std::string> &flags) {
                     packing.Require();
                     unpacking.Require();
                 }
-                std::string bootstrapdirStr = bootstrapdir;
                 {
                     path bootstrapdirToRoot = "..";
                     {
@@ -743,7 +997,7 @@ void Build::Make(const std::vector<std::string> &flags) {
                         }
                     }
                     path bootstrapdirBootstrapLink = bootstrapdir;
-                    for (auto &part : bootstrapdir) {
+                    for (const auto &part : bootstrapdir) {
                         std::string p = part;
                         if (p == "/") {
                             continue;
@@ -753,7 +1007,7 @@ void Build::Make(const std::vector<std::string> &flags) {
                     }
                     {
                         path crdir = bootstrapdir;
-                        for (auto &part : builddir) {
+                        for (const auto &part : builddir) {
                             std::string p = part;
                             if (p == "/") {
                                 continue;
@@ -779,9 +1033,9 @@ void Build::Make(const std::vector<std::string> &flags) {
                 }
                 {
                     std::cout << "==> Unpacking preliminary libcpp to bootstrap\n";
-                    std::string pkg{libcppBuild.GetName()};
+                    std::string pkg{libcppHeaderOnlyBuild.GetName()};
                     pkg.append("-");
-                    pkg.append(libcppBuild.GetVersion());
+                    pkg.append(libcppHeaderOnlyBuild.GetVersion());
                     pkg.append(".pkg");
                     pkg = builddir / pkg;
                     Unpack unpack{pkg, bootstrapdirStr};
@@ -798,7 +1052,7 @@ void Build::Make(const std::vector<std::string> &flags) {
                     }
                     auto originalEnv = Exec::getenv();
                     auto env = originalEnv;
-                    env.insert_or_assign("MUSL_BOOTSTRAP", bootstrapdirStr);
+                    env.insert_or_assign("SYSROOT", bootstrapdirStr);
                     Exec::setenv(env);
                     std::cout << "==> Rebuilding libcpp\n";
                     libcppBuild.Package();
@@ -818,6 +1072,7 @@ void Build::Make(const std::vector<std::string> &flags) {
                         bb.Clean();
                         bb.Package();
                         bb.Clean();
+                        Exec::setenv(env);
                         {
                             std::string pkg{bb.GetName()};
                             pkg.append("-");
@@ -874,7 +1129,7 @@ void Build::Make(const std::vector<std::string> &flags) {
                     args.emplace_back(target);
                 }
                 auto env = Exec::getenv();
-                Buildenv buildenv{cxxflags};
+                Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
                 buildenv.FilterEnv(env);
                 make.exec(args, env);
                 return 0;
@@ -963,11 +1218,35 @@ void Build::Install(const std::vector<std::string> &flags) {
                     args.emplace_back(target);
                 }
                 auto env = Exec::getenv();
-                Buildenv buildenv{cxxflags};
+                Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
                 buildenv.FilterEnv(env);
                 make.exec(args, env);
                 return 0;
             }};
+        }
+        auto env = Exec::getenv();
+        for (const auto &cmd : postInstall) {
+            auto iterator = cmd.begin();
+            if (iterator == cmd.end()) {
+                continue;
+            }
+            auto cmdexec = *iterator;
+            ++iterator;
+            std::vector<std::string> args{};
+            while (iterator != cmd.end()) {
+                args.emplace_back(*iterator);
+                ++iterator;
+            }
+            Fork f{[&installdir, &cmdexec, &args, &env] () {
+                if (chdir(installdir.c_str()) != 0) {
+                    std::cerr << "chdir: build dir: " << installdir << "\n";
+                    return 1;
+                }
+                Exec e{cmdexec};
+                e.exec(args, env);
+                return 0;
+            }};
+            f.Require();
         }
     } else {
         throw BuildException("Build dir not found");
@@ -989,10 +1268,10 @@ void Build::Package(const std::vector<std::string> &flags) {
         for (const auto &file: files) {
             std::string sp = file;
             path p = installdir / file;
-            if (is_directory(p)) {
-                sstr << "dir " << sp << "\n";
-            } else if (is_symlink(p)) {
+            if (is_symlink(p)) {
                 sstr << "link " << sp << "\n";
+            } else if (is_directory(p)) {
+                sstr << "dir " << sp << "\n";
             } else {
                 std::fstream inputStream{};
                 inputStream.open(p, std::ios_base::in | std::ios_base::binary);

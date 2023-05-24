@@ -29,20 +29,30 @@ class Build {
     /* bootstrap: */
     std::string libc;
     std::string libcpp;
+    std::string libcppHeaderBuild;
     std::vector<std::string> bootstrap;
     std::vector<std::string> staticBootstrap;
     /* normal: */
     std::string cxxflags;
+    std::string ldflags;
+    std::string sysrootCxxflags;
+    std::string sysrootLdflags;
+    std::string sysrootCmake;
     std::vector<std::string> buildTargets;
     std::vector<std::string> installTargets;
+    std::vector<std::vector<std::string>> beforeConfigure;
+    std::vector<std::vector<std::string>> postInstall;
     std::vector<std::string> configureParams;
     std::vector<std::string> staticConfigureParams;
+    std::vector<std::string> sysrootConfigureParams;
     std::vector<std::string> patches;
     bool configureDefaultParameters;
     bool configureStaticOverrides;
+    bool configureSysrootOverrides;
+    bool requiresClang;
     bool valid;
 public:
-    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), bootstrap(), staticBootstrap(), cxxflags(), buildTargets(), configureParams(), staticConfigureParams(), installTargets(), patches(), configureStaticOverrides(false), valid(false) {}
+    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), installTargets(), patches(), configureStaticOverrides(false), requiresClang(false), valid(false) {}
     Build(const std::shared_ptr<const Port> &port, path buildfile);
 private:
     void ReplaceVars(std::string &str) const;

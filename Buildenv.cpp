@@ -6,22 +6,25 @@
 #include <cctype>
 #include <algorithm>
 
-Buildenv::Buildenv(const std::string &cxxflags) : cxxflags(cxxflags) {}
+Buildenv::Buildenv(const std::string &cxxflags, const std::string &ldflags, const std::string &sysrootCxxflags, const std::string &sysrootLdflags, bool requiresClang) : cxxflags(cxxflags), ldflags(ldflags), sysrootCxxflags(sysrootCxxflags), sysrootLdflags(sysrootLdflags), sysroot(), requiresClang(requiresClang) {}
 
 void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
     std::map<std::string,std::string>::iterator end = env.end();
-    std::map<std::string,std::string>::iterator musl_bootstrap = end;
+    std::map<std::string,std::string>::iterator bootstrap_sysroot = end;
     std::map<std::string,std::string>::iterator libcpp_bootstrap = end;
     std::map<std::string,std::string>::iterator cflags_iter = end;
     std::map<std::string,std::string>::iterator cxxflags_iter = end;
     std::map<std::string,std::string>::iterator ldflags_iter = end;
     std::map<std::string,std::string>::iterator ld_library_path_iter = end;
+    std::map<std::string,std::string>::iterator cc_iter = end;
+    std::map<std::string,std::string>::iterator cxx_iter = end;
     auto iterator = env.begin();
     while (iterator != end) {
         auto key = iterator->first;
         std::transform(key.begin(), key.end(), key.begin(), [] (auto c) { return std::tolower(c); });
-        if (key == "musl_bootstrap") {
-            musl_bootstrap = iterator;
+        if (key == "sysroot") {
+            bootstrap_sysroot = iterator;
+            this->sysroot = bootstrap_sysroot->second;
         } else if (key == "libcpp_bootstrap") {
             libcpp_bootstrap = iterator;
         } else if (key == "cflags") {
@@ -32,6 +35,10 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
             ldflags_iter = iterator;
         } else if (key == "ld_library_path") {
             ld_library_path_iter = iterator;
+        } else if (key == "cc") {
+            cc_iter = iterator;
+        } else if (key == "cxx") {
+            cxx_iter = iterator;
         }
         ++iterator;
     }
@@ -39,6 +46,8 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
     std::string cxxflags{};
     std::string ldflags{};
     std::string ld_library_path{};
+    std::string cc{};
+    std::string cxx{};
     if (cflags_iter != end) {
         cflags = cflags_iter->second;
     }
@@ -51,17 +60,36 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
     if (ld_library_path_iter != end) {
         ld_library_path = ld_library_path_iter->second;
     }
+    if (cc_iter != end) {
+        cc = cc_iter->second;
+    }
+    if (cxx_iter != end) {
+        cxx = cxx_iter->second;
+    }
     bool add_cflags{false};
     bool add_cxxflags{false};
     bool add_ldflags{false};
     bool add_ld_library_path{false};
-    if (musl_bootstrap != end) {
+    bool add_cc{false};
+    bool add_cxx{false};
+    if (requiresClang) {
+        if (cc.find("clang") == std::string::npos) {
+            cc = "clang";
+            add_cc = true;
+        }
+        if (cxx.find("clang") == std::string::npos) {
+            cxx = "clang++";
+            add_cxx = true;
+        }
+    }
+    if (bootstrap_sysroot != end) {
         std::string musl_cflags = " --sysroot=";
-        musl_cflags.append(musl_bootstrap->second);
-        musl_cflags.append(" ");
+        musl_cflags.append(bootstrap_sysroot->second);
+        musl_cflags.append(" -static-libgcc ");
+//        musl_cflags.append(" --rtlib=compiler-rt ");
         auto musl_cxxflags = musl_cflags;
-        musl_cxxflags.append("-isystem ");
-        musl_cxxflags.append(musl_bootstrap->second);
+        musl_cxxflags.append(" -isystem ");
+        musl_cxxflags.append(bootstrap_sysroot->second);
         musl_cxxflags.append("/usr/include ");
         musl_cflags.append(cflags);
         musl_cxxflags.append(cxxflags);
@@ -71,22 +99,33 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
         add_cflags = true;
         add_cxxflags = true;
 
-        std::string musl_libdir = musl_bootstrap->second;
+        std::string musl_libdir = bootstrap_sysroot->second;
         musl_libdir.append("/lib");
         std::string musl = musl_libdir;
         musl.append("/libc.so");
-        std::string musl_ldflags = " -L";
+        std::string musl_ldflags = " -g -L";
         musl_ldflags.append(musl_libdir);
-        musl_ldflags.append(" -Wl,--sysroot=");
-        musl_ldflags.append(musl_bootstrap->second);
+        musl_ldflags.append(" -L");
+        musl_ldflags.append(bootstrap_sysroot->second);
+        musl_ldflags.append("/usr/lib64 -L");
+        musl_ldflags.append(bootstrap_sysroot->second);
+        musl_ldflags.append("/usr/lib -Wl,--sysroot=");
+        musl_ldflags.append(bootstrap_sysroot->second);
         musl_ldflags.append(" -Wl,--dynamic-linker=");
         musl_ldflags.append(musl);
-        musl_ldflags.append(" ");
+        musl_ldflags.append(" -static-libgcc ");
+        //musl_ldflags.append(" --rtlib=compiler-rt ");
         musl_ldflags.append(ldflags);
         ldflags = musl_ldflags;
         add_ldflags = true;
 
         std::string muslld = musl_libdir;
+        muslld.append(":");
+        muslld.append(bootstrap_sysroot->second);
+        muslld.append("/usr/lib64");
+        muslld.append(":");
+        muslld.append(bootstrap_sysroot->second);
+        muslld.append("/usr/lib");
         if (!ld_library_path.empty()) {
             muslld.append(":");
             muslld.append(ld_library_path);
@@ -95,10 +134,21 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
         add_ld_library_path = true;
     }
     if (libcpp_bootstrap != end) {
-        std::string musl_cxxflags{" -Wl,-lc++ -isystem "};
-        musl_cxxflags.append(musl_bootstrap->second);
+        std::string musl_cxxflags{" -g"};
+        //musl_cxxflags.append(" -stdlib=libc++");
+        musl_cxxflags.append(" -isystem ");
+        musl_cxxflags.append(bootstrap_sysroot->second);
         musl_cxxflags.append("/usr/include/c++/v1 ");
         musl_cxxflags.append(cxxflags);
+        musl_cxxflags.append(" -static-libgcc ");
+        //musl_cxxflags.append(" --rtlib=compiler-rt ");
+        //musl_cxxflags.append(" -Wl,-lc++ -Wl,-lc -Wl,-nostdlib -nostdlib -Wl,");
+        //musl_cxxflags.append(bootstrap_sysroot->second);
+        //musl_cxxflags.append("/lib/crt1.o -Wl,");
+        //musl_cxxflags.append(bootstrap_sysroot->second);
+        //musl_cxxflags.append("/lib/crti.o -Wl,");
+        //musl_cxxflags.append(bootstrap_sysroot->second);
+        //musl_cxxflags.append("/lib/crtn.o ");
         cxxflags = musl_cxxflags;
 
         add_cxxflags = true;
@@ -107,6 +157,21 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
         cxxflags.append(" ");
         cxxflags.append(this->cxxflags);
         add_cxxflags = true;
+    }
+    if (!(this->ldflags.empty())) {
+        ldflags.append(" ");
+        ldflags.append(this->ldflags);
+        add_ldflags = true;
+    }
+    if (!this->sysroot.empty() && !this->sysrootCxxflags.empty()) {
+        cxxflags.append(" ");
+        cxxflags.append(this->sysrootCxxflags);
+        add_cxxflags = true;
+    }
+    if (!this->sysroot.empty() && !this->sysrootLdflags.empty()) {
+        ldflags.append(" ");
+        ldflags.append(this->sysrootLdflags);
+        add_ldflags = true;
     }
     if (add_cflags && cflags_iter != end) {
         cflags_iter->second = cflags;
@@ -124,6 +189,14 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
         ld_library_path_iter->second = ld_library_path;
         add_ld_library_path = false;
     }
+    if (add_cc && cc_iter != end) {
+        cc_iter->second = cc;
+        add_cc = false;
+    }
+    if (add_cxx && cxx_iter != end) {
+        cxx_iter->second = cxx;
+        add_cxx = false;
+    }
     /* iterators invalid mark */
     if (add_cflags) {
         env.insert_or_assign("CFLAGS", cflags);
@@ -136,5 +209,11 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
     }
     if (add_ld_library_path) {
         env.insert_or_assign("LD_LIBRARY_PATH", ld_library_path);
+    }
+    if (add_cc) {
+        env.insert_or_assign("CC", cc);
+    }
+    if (add_cxx) {
+        env.insert_or_assign("CXX", cxx);
     }
 }
