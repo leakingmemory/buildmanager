@@ -6,6 +6,7 @@
 #define BM_BUILD_H
 
 #include <filesystem>
+#include <map>
 #include "Distfile.h"
 
 using path = std::filesystem::path;
@@ -45,6 +46,7 @@ class Build {
     std::vector<std::string> configureParams;
     std::vector<std::string> staticConfigureParams;
     std::vector<std::string> sysrootConfigureParams;
+    std::map<std::string,std::string> sysrootEnv;
     std::vector<std::string> patches;
     bool configureDefaultParameters;
     bool configureStaticOverrides;
@@ -52,10 +54,11 @@ class Build {
     bool requiresClang;
     bool valid;
 public:
-    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), installTargets(), patches(), configureStaticOverrides(false), requiresClang(false), valid(false) {}
+    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), installTargets(), patches(), configureStaticOverrides(false), requiresClang(false), valid(false) {}
     Build(const std::shared_ptr<const Port> &port, path buildfile);
 private:
     void ReplaceVars(std::string &str) const;
+    void ApplyEnv(const std::string &sysroot, std::map<std::string,std::string> &env);
 public:
     [[nodiscard]] std::string GetName() const;
     [[nodiscard]] std::string GetVersion() const {

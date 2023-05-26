@@ -78,7 +78,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), installTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), patches(), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), installTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -438,6 +438,23 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                         }
                     }
                     {
+                        auto iterator = sysrootItem.find("env");
+                        if (iterator != sysrootItem.end()) {
+                            auto &sysrootEnv = *iterator;
+                            if (sysrootEnv.is_object()) {
+                                for (const auto &item : sysrootEnv.items()) {
+                                    std::string key = item.key();
+                                    const auto &value = item.value();
+                                    if (!value.is_string()) {
+                                        continue;
+                                    }
+                                    std::string valueAsString = value;
+                                    this->sysrootEnv.insert_or_assign(key, valueAsString);
+                                }
+                            }
+                        }
+                    }
+                    {
                         auto iterator = sysrootItem.find("cxxflags");
                         if (iterator != sysrootItem.end()) {
                             auto &cxxflags = *iterator;
@@ -533,6 +550,32 @@ void Build::ReplaceVars(std::string &str) const {
         }
         return sysroot;
     });
+}
+
+void Build::ApplyEnv(const std::string &sysroot, std::map<std::string,std::string> &env) {
+    if (!sysroot.empty()) {
+        for (const auto &pair : sysrootEnv) {
+            std::string key = pair.first;
+            std::transform(key.begin(), key.end(), key.begin(), [] (const char c) { return std::tolower(c); });
+            std::string value = pair.second;
+            bool found{false};
+            for (auto &pair : env) {
+                std::string foundKey = pair.first;
+                std::transform(foundKey.begin(), foundKey.end(), foundKey.begin(), [] (const char c) { return std::tolower(c); });
+                if (key == foundKey) {
+                    found = true;
+                    ReplaceVars(value);
+                    pair.second = value;
+                    break;
+                }
+            }
+            key = pair.first;
+            if (!found) {
+                ReplaceVars(value);
+                env.insert_or_assign(key, value);
+            }
+        }
+    }
 }
 
 std::string Build::GetName() const {
@@ -670,6 +713,7 @@ void Build::Configure(const std::vector<std::string> &flags) {
     Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
     buildenv.FilterEnv(env);
     std::string sysroot = buildenv.Sysroot();
+    ApplyEnv(sysroot, env);
     if (exists(builddir) && is_directory(builddir)) {
         for (const auto &cmd : beforeConfigure) {
             auto iterator = cmd.begin();
@@ -1131,6 +1175,7 @@ void Build::Make(const std::vector<std::string> &flags) {
                 auto env = Exec::getenv();
                 Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
                 buildenv.FilterEnv(env);
+                ApplyEnv(buildenv.Sysroot(), env);
                 make.exec(args, env);
                 return 0;
             }
@@ -1220,11 +1265,12 @@ void Build::Install(const std::vector<std::string> &flags) {
                 auto env = Exec::getenv();
                 Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
                 buildenv.FilterEnv(env);
+                ApplyEnv(buildenv.Sysroot(), env);
                 make.exec(args, env);
                 return 0;
             }};
         }
-        auto env = Exec::getenv();
+         auto env = Exec::getenv();
         for (const auto &cmd : postInstall) {
             auto iterator = cmd.begin();
             if (iterator == cmd.end()) {
