@@ -78,7 +78,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), installTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), installTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -310,6 +310,15 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                         if (defparams.is_boolean()) {
                             bool defparamsValue = defparams;
                             configureDefaultParameters = defparamsValue;
+                        }
+                    }
+                }
+                {
+                    auto skip = configure.find("skip");
+                    if (skip != configure.end()) {
+                        auto skipValue = *skip;
+                        if (skipValue.is_boolean()) {
+                            this->configureSkip = skipValue;
                         }
                     }
                 }
@@ -550,6 +559,21 @@ void Build::ReplaceVars(std::string &str) const {
         }
         return sysroot;
     });
+    ::ReplaceVars(str, "{CFLAGS}", [this] () {
+        auto env = Exec::getenv();
+        Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
+        buildenv.FilterEnv(env);
+        std::string cflags{};
+        for (const auto &pair : env) {
+            std::string key = pair.first;
+            std::transform(key.begin(), key.end(), key.begin(), [] (const char c) { return std::tolower(c); });
+            if (key == "cflags") {
+                cflags = pair.second;
+                continue;
+            }
+        }
+        return cflags;
+    });
 }
 
 void Build::ApplyEnv(const std::string &sysroot, std::map<std::string,std::string> &env) {
@@ -692,6 +716,10 @@ void Build::Configure(const std::vector<std::string> &flags) {
         cmakeDir = port->GetRoot() / "work" / cm;
     }
     std::cout << "==> Configuring " << GetName() << "-" << GetVersion() << "\n";
+    if (configureSkip) {
+        create_directory(workdir / "configured");
+        return;
+    }
     auto tooling = GetTooling();
     if (tooling == Tooling::CMAKE) {
         if (!exists(cmakeDir)) {
@@ -1170,7 +1198,9 @@ void Build::Make(const std::vector<std::string> &flags) {
                     args.emplace_back("VERBOSE=1");
                 }
                 for (auto &target: buildTargets) {
-                    args.emplace_back(target);
+                    std::string targetVal{target};
+                    ReplaceVars(targetVal);
+                    args.emplace_back(targetVal);
                 }
                 auto env = Exec::getenv();
                 Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
@@ -1260,7 +1290,9 @@ void Build::Install(const std::vector<std::string> &flags) {
                     args.push_back(destdir);
                 }
                 for (const auto &target: installTargets) {
-                    args.emplace_back(target);
+                    std::string targetVal{target};
+                    ReplaceVars(targetVal);
+                    args.emplace_back(targetVal);
                 }
                 auto env = Exec::getenv();
                 Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};

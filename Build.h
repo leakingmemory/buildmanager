@@ -48,13 +48,14 @@ class Build {
     std::vector<std::string> sysrootConfigureParams;
     std::map<std::string,std::string> sysrootEnv;
     std::vector<std::string> patches;
+    bool configureSkip;
     bool configureDefaultParameters;
     bool configureStaticOverrides;
     bool configureSysrootOverrides;
     bool requiresClang;
     bool valid;
 public:
-    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), installTargets(), patches(), configureStaticOverrides(false), requiresClang(false), valid(false) {}
+    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), installTargets(), patches(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false) {}
     Build(const std::shared_ptr<const Port> &port, path buildfile);
 private:
     void ReplaceVars(std::string &str) const;
