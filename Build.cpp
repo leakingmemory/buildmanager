@@ -1230,6 +1230,8 @@ void Build::Install(const std::vector<std::string> &flags) {
         std::string cm{this->builddir};
         cm.append("-cmake");
         builddir = port->GetRoot() / "work" / cm;
+    } else if (tooling == Tooling::BOOTSTRAP) {
+        builddir = builddir / "bootstrap";
     }
     path installdir = port->GetRoot() / "work" / "install";
     if (!exists(installdir)) {
@@ -1240,7 +1242,7 @@ void Build::Install(const std::vector<std::string> &flags) {
         throw BuildException("Installdir is not a directory");
     }
     if (exists(builddir) && is_directory(builddir)) {
-        if (tooling == Tooling::STATIC_FILES) {
+        if (tooling == Tooling::STATIC_FILES || tooling == Tooling::BOOTSTRAP) {
             Fork extract([&installdir] () {
                 if (chdir(installdir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << installdir << "\n";
