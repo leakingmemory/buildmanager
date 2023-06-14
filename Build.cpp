@@ -922,199 +922,230 @@ void Build::Make(const std::vector<std::string> &flags) {
         builddir = port->GetRoot() / "work" / cm;
     }
     if (exists(builddir) && is_directory(builddir)) {
-        Fork f{[this, builddir, tooling] () {
+        if (tooling == Tooling::BOOTSTRAP) {
             if (chdir(builddir.c_str()) != 0) {
                 std::cerr << "chdir: build dir: " << builddir << "\n";
-                return 1;
+                throw BuildException("bootstrap chdir to build");
             }
-            if (tooling == Tooling::BOOTSTRAP) {
-                auto ports = Ports::Create(port->GetGroup()->GetPortsRoot()->GetRoot().c_str());
-                auto build = GetBuild(*ports, libc);
-                if (!build.IsValid()) {
-                    std::cerr << "Bootstrap libc was not found: " << libc << "\n";
-                    return 1;
-                }
-                auto libcppHeaderOnlyBuild = GetBuild(*ports, libcppHeaderBuild);
-                if (!libcppHeaderOnlyBuild.IsValid()) {
-                    std::cerr << "Bootstrap libcpp header build was not found: " << libcpp << "\n";
-                    return 1;
-                }
-                auto libcppBuild = GetBuild(*ports, libcpp);
-                if (!libcppBuild.IsValid()) {
-                    std::cerr << "Bootstrap libcpp was not found: " << libcpp << "\n";
-                    return 1;
-                }
-                std::vector<Build> bootstrapBuilds{};
-                std::vector<Build> bootstrapStaticBuilds{};
-                path bootstrapdir = builddir / "bootstrap";
-                std::string bootstrapdirStr = bootstrapdir;
-                {
-                    auto originalEnv = Exec::getenv();
-                    auto env = originalEnv;
-                    env.insert_or_assign("SYSROOT", bootstrapdirStr);
-                    Exec::setenv(env);
-                    for (const auto &bootstrapName: this->bootstrap) {
-                        auto build = GetBuild(*ports, bootstrapName);
-                        if (!build.IsValid()) {
-                            std::cerr << "Build " << bootstrapName << " not found.\n";
-                            throw BuildException("Build not found");
-                        }
-                        bootstrapBuilds.emplace_back(build);
-                    }
-                    Exec::setenv(originalEnv);
-                }
-                for (const auto &bootstrapName : this->staticBootstrap) {
+            auto ports = Ports::Create(port->GetGroup()->GetPortsRoot()->GetRoot().c_str());
+            auto build = GetBuild(*ports, libc);
+            if (!build.IsValid()) {
+                std::cerr << "Bootstrap libc was not found: " << libc << "\n";
+                throw BuildException("Bootstrap libc not found");
+            }
+            auto libcppHeaderOnlyBuild = GetBuild(*ports, libcppHeaderBuild);
+            if (!libcppHeaderOnlyBuild.IsValid()) {
+                std::cerr << "Bootstrap libcpp header build was not found: " << libcpp << "\n";
+                throw BuildException("Bootstrap libcpp header not found");
+            }
+            auto libcppBuild = GetBuild(*ports, libcpp);
+            if (!libcppBuild.IsValid()) {
+                std::cerr << "Bootstrap libcpp was not found: " << libcpp << "\n";
+                throw BuildException("Bootstrap libcpp not found");
+            }
+            std::vector<Build> bootstrapBuilds{};
+            std::vector<Build> bootstrapStaticBuilds{};
+            path bootstrapdir = builddir / "bootstrap";
+            std::string bootstrapdirStr = bootstrapdir;
+            {
+                auto originalEnv = Exec::getenv();
+                auto env = originalEnv;
+                env.insert_or_assign("SYSROOT", bootstrapdirStr);
+                Exec::setenv(env);
+                for (const auto &bootstrapName: this->bootstrap) {
                     auto build = GetBuild(*ports, bootstrapName);
                     if (!build.IsValid()) {
                         std::cerr << "Build " << bootstrapName << " not found.\n";
                         throw BuildException("Build not found");
                     }
-                    bootstrapStaticBuilds.emplace_back(build);
+                    bootstrapBuilds.emplace_back(build);
                 }
-                std::cout << "==> Fetching distfiles for bootstrapping\n";
-                for (auto &bb : bootstrapBuilds) {
-                    bb.Fetch();
+                Exec::setenv(originalEnv);
+            }
+            for (const auto &bootstrapName: this->staticBootstrap) {
+                auto build = GetBuild(*ports, bootstrapName);
+                if (!build.IsValid()) {
+                    std::cerr << "Build " << bootstrapName << " not found.\n";
+                    throw BuildException("Build not found");
                 }
-                auto restoreEnv = Exec::getenv();
-                std::vector<std::string> staticFlags{};
-                staticFlags.emplace_back("static");
-                for (auto &bb : bootstrapStaticBuilds) {
-                    bb.Clean();
-                    bb.Package(staticFlags);
-                    bb.Clean();
-                    Exec::setenv(restoreEnv);
-                }
-                libcppHeaderOnlyBuild.Clean();
-                libcppHeaderOnlyBuild.Package();
-                libcppHeaderOnlyBuild.Clean();
+                bootstrapStaticBuilds.emplace_back(build);
+            }
+            std::cout << "==> Fetching distfiles for bootstrapping\n";
+            for (auto &bb: bootstrapBuilds) {
+                bb.Fetch();
+            }
+            auto restoreEnv = Exec::getenv();
+            std::vector<std::string> staticFlags{};
+            staticFlags.emplace_back("static");
+            for (auto &bb: bootstrapStaticBuilds) {
+                bb.Clean();
+                bb.Package(staticFlags);
+                bb.Clean();
                 Exec::setenv(restoreEnv);
-                build.Clean();
-                build.Package();
-                build.Clean();
-                Exec::setenv(restoreEnv);
-                if (!exists(bootstrapdir)) {
-                    if (!create_directory(bootstrapdir)) {
-                        throw BuildException("Create bootstrapdir");
-                    }
+            }
+            libcppHeaderOnlyBuild.Clean();
+            libcppHeaderOnlyBuild.Package();
+            libcppHeaderOnlyBuild.Clean();
+            Exec::setenv(restoreEnv);
+            build.Clean();
+            build.Package();
+            build.Clean();
+            Exec::setenv(restoreEnv);
+            if (!exists(bootstrapdir)) {
+                if (!create_directory(bootstrapdir)) {
+                    throw BuildException("Create bootstrapdir");
                 }
-                if (!is_directory(bootstrapdir)) {
-                    throw BuildException("Bootstrapdir is not directory");
+            }
+            if (!is_directory(bootstrapdir)) {
+                throw BuildException("Bootstrapdir is not directory");
+            }
+            {
+                std::cout << "==> Copying ports dir to booststrap\n";
+                path bootstrapPortsdir = bootstrapdir;
+                for (const auto &part: ports->GetRoot()) {
+                    std::string p = part;
+                    if (p == "/") {
+                        continue;
+                    }
+                    bootstrapPortsdir = bootstrapPortsdir / p;
                 }
-                {
-                    std::cout << "==> Copying ports dir to booststrap\n";
-                    path bootstrapPortsdir = bootstrapdir;
-                    for (const auto &part : ports->GetRoot()) {
-                        std::string p = part;
-                        if (p == "/") {
-                            continue;
-                        }
-                        bootstrapPortsdir = bootstrapPortsdir / p;
+                if (!create_directories(bootstrapPortsdir)) {
+                    throw BuildException("Create bootstrap ports dir");
+                }
+                std::string fileList = FileListString(ListFiles(ports->GetRoot(), [](const auto &p) {
+                    std::string filename = p.filename();
+                    return filename != "work";
+                }));
+                Fork unpacking{[bootstrapPortsdir]() {
+                    std::string dir = bootstrapPortsdir;
+                    if (chdir(dir.c_str()) != 0) {
+                        std::cerr << "chdir: build dir: " << dir << "\n";
+                        return 1;
                     }
-                    if (!create_directories(bootstrapPortsdir)) {
-                        throw BuildException("Create bootstrap ports dir");
+                    Exec exec{"cpio"};
+                    std::vector<std::string> args{};
+                    args.emplace_back("--extract");
+                    auto env = Exec::getenv();
+                    exec.exec(args, env);
+                    return 0;
+                }, ForkInputOutput::INPUT};
+                Fork packing{[ports]() {
+                    if (chdir(ports->GetRoot().c_str()) != 0) {
+                        std::cerr << "chdir: build dir: " << ports->GetRoot() << "\n";
+                        return 1;
                     }
-                    std::string fileList = FileListString(ListFiles(ports->GetRoot(), [] (const auto &p) {
-                        std::string filename = p.filename();
-                        return filename != "work";
-                    }));
-                    Fork unpacking{[bootstrapPortsdir] () {
-                        std::string dir = bootstrapPortsdir;
-                        if (chdir(dir.c_str()) != 0) {
-                            std::cerr << "chdir: build dir: " << dir << "\n";
-                            return 1;
-                        }
-                        Exec exec{"cpio"};
-                        std::vector<std::string> args{};
-                        args.emplace_back("--extract");
-                        auto env = Exec::getenv();
-                        exec.exec(args, env);
-                        return 0;
-                    }, ForkInputOutput::INPUT};
-                    Fork packing{[ports] () {
-                        if (chdir(ports->GetRoot().c_str()) != 0) {
-                            std::cerr << "chdir: build dir: " << ports->GetRoot() << "\n";
-                            return 1;
-                        }
-                        Exec exec{"cpio"};
-                        std::vector<std::string> args{};
-                        args.emplace_back("--create");
-                        auto env = Exec::getenv();
-                        exec.exec(args, env);
-                        return 0;
-                    }, ForkInputOutput::INPUTOUTPUT};
-                    Fork submit{[&packing, &fileList] () {
-                        packing << fileList;
-                        packing.CloseInput();
-                        return 0;
-                    }};
+                    Exec exec{"cpio"};
+                    std::vector<std::string> args{};
+                    args.emplace_back("--create");
+                    auto env = Exec::getenv();
+                    exec.exec(args, env);
+                    return 0;
+                }, ForkInputOutput::INPUTOUTPUT};
+                Fork submit{[&packing, &fileList]() {
+                    packing << fileList;
                     packing.CloseInput();
-                    unpacking << packing;
-                    unpacking.CloseInput();
-                    packing.Require();
-                    unpacking.Require();
+                    return 0;
+                }};
+                packing.CloseInput();
+                unpacking << packing;
+                unpacking.CloseInput();
+                packing.Require();
+                unpacking.Require();
+            }
+            {
+                path bootstrapdirToRoot = "..";
+                {
+                    auto iterator = builddir.begin();
+                    if (iterator != builddir.end()) {
+                        ++iterator;
+                    }
+                    if (iterator != builddir.end()) {
+                        ++iterator;
+                    }
+                    while (iterator != builddir.end()) {
+                        bootstrapdirToRoot = bootstrapdirToRoot / "..";
+                        ++iterator;
+                    }
+                }
+                path bootstrapdirBootstrapLink = bootstrapdir;
+                for (const auto &part: bootstrapdir) {
+                    std::string p = part;
+                    if (p == "/") {
+                        continue;
+                    }
+                    std::cout << p << "\n";
+                    bootstrapdirBootstrapLink = bootstrapdirBootstrapLink / p;
                 }
                 {
-                    path bootstrapdirToRoot = "..";
-                    {
-                        auto iterator = builddir.begin();
-                        if (iterator != builddir.end()) {
-                            ++iterator;
-                        }
-                        if (iterator != builddir.end()) {
-                            ++iterator;
-                        }
-                        while (iterator != builddir.end()) {
-                            bootstrapdirToRoot = bootstrapdirToRoot / "..";
-                            ++iterator;
-                        }
-                    }
-                    path bootstrapdirBootstrapLink = bootstrapdir;
-                    for (const auto &part : bootstrapdir) {
+                    path crdir = bootstrapdir;
+                    for (const auto &part: builddir) {
                         std::string p = part;
                         if (p == "/") {
                             continue;
                         }
                         std::cout << p << "\n";
-                        bootstrapdirBootstrapLink = bootstrapdirBootstrapLink / p;
+                        crdir = crdir / p;
                     }
+                    if (!create_directories(crdir)) {
+                        std::cerr << "Bootstrap link failed: mkdir: " << crdir << "\n";
+                        throw BuildException("Bootstrap link failed");
+                    }
+                }
+                create_directory_symlink(bootstrapdirToRoot, bootstrapdirBootstrapLink);
+            }
+            {
+                std::cout << "==> Unpacking libc to bootstrap\n";
+                std::string pkg{build.GetName()};
+                pkg.append("-");
+                pkg.append(build.GetVersion());
+                pkg.append(".pkg");
+                pkg = builddir / pkg;
+                Unpack unpack{pkg, bootstrapdirStr};
+            }
+            {
+                std::cout << "==> Unpacking preliminary libcpp to bootstrap\n";
+                std::string pkg{libcppHeaderOnlyBuild.GetName()};
+                pkg.append("-");
+                pkg.append(libcppHeaderOnlyBuild.GetVersion());
+                pkg.append(".pkg");
+                pkg = builddir / pkg;
+                Unpack unpack{pkg, bootstrapdirStr};
+            }
+            {
+                std::cout << "==> Unpacking static builds to bootstrap\n";
+                for (auto &bb: bootstrapStaticBuilds) {
+                    std::string pkg{bb.GetName()};
+                    pkg.append("-");
+                    pkg.append(bb.GetVersion());
+                    pkg.append(".pkg");
+                    pkg = builddir / pkg;
+                    Unpack unpack{pkg, bootstrapdirStr};
+                }
+                auto originalEnv = Exec::getenv();
+                auto env = originalEnv;
+                env.insert_or_assign("SYSROOT", bootstrapdirStr);
+                Exec::setenv(env);
+                std::cout << "==> Rebuilding libcpp\n";
+                libcppBuild.Clean();
+                libcppBuild.Package();
+                libcppBuild.Clean();
+                {
+                    std::string pkg{libcppBuild.GetName()};
+                    pkg.append("-");
+                    pkg.append(libcppBuild.GetVersion());
+                    pkg.append(".pkg");
+                    pkg = builddir / pkg;
+                    Unpack unpack{pkg, bootstrapdirStr};
+                }
+                env.insert_or_assign("LIBCPP_BOOTSTRAP", bootstrapdirStr);
+                Exec::setenv(env);
+                std::cout << "==> Building and installing bootstrapping builds\n";
+                for (auto &bb: bootstrapBuilds) {
+                    bb.Clean();
+                    bb.Package();
+                    bb.Clean();
+                    Exec::setenv(env);
                     {
-                        path crdir = bootstrapdir;
-                        for (const auto &part : builddir) {
-                            std::string p = part;
-                            if (p == "/") {
-                                continue;
-                            }
-                            std::cout << p << "\n";
-                            crdir = crdir / p;
-                        }
-                        if (!create_directories(crdir)) {
-                            std::cerr << "Bootstrap link failed: mkdir: " << crdir << "\n";
-                            return 1;
-                        }
-                    }
-                    create_directory_symlink(bootstrapdirToRoot, bootstrapdirBootstrapLink);
-                }
-                {
-                    std::cout << "==> Unpacking libc to bootstrap\n";
-                    std::string pkg{build.GetName()};
-                    pkg.append("-");
-                    pkg.append(build.GetVersion());
-                    pkg.append(".pkg");
-                    pkg = builddir / pkg;
-                    Unpack unpack{pkg, bootstrapdirStr};
-                }
-                {
-                    std::cout << "==> Unpacking preliminary libcpp to bootstrap\n";
-                    std::string pkg{libcppHeaderOnlyBuild.GetName()};
-                    pkg.append("-");
-                    pkg.append(libcppHeaderOnlyBuild.GetVersion());
-                    pkg.append(".pkg");
-                    pkg = builddir / pkg;
-                    Unpack unpack{pkg, bootstrapdirStr};
-                }
-                {
-                    std::cout << "==> Unpacking static builds to bootstrap\n";
-                    for (auto &bb : bootstrapStaticBuilds) {
                         std::string pkg{bb.GetName()};
                         pkg.append("-");
                         pkg.append(bb.GetVersion());
@@ -1122,95 +1153,70 @@ void Build::Make(const std::vector<std::string> &flags) {
                         pkg = builddir / pkg;
                         Unpack unpack{pkg, bootstrapdirStr};
                     }
-                    auto originalEnv = Exec::getenv();
-                    auto env = originalEnv;
-                    env.insert_or_assign("SYSROOT", bootstrapdirStr);
-                    Exec::setenv(env);
-                    std::cout << "==> Rebuilding libcpp\n";
-                    libcppBuild.Package();
-                    libcppBuild.Clean();
-                    {
-                        std::string pkg{libcppBuild.GetName()};
-                        pkg.append("-");
-                        pkg.append(libcppBuild.GetVersion());
-                        pkg.append(".pkg");
-                        pkg = builddir / pkg;
-                        Unpack unpack{pkg, bootstrapdirStr};
-                    }
-                    env.insert_or_assign("LIBCPP_BOOTSTRAP", bootstrapdirStr);
-                    Exec::setenv(env);
-                    std::cout << "==> Building and installing bootstrapping builds\n";
-                    for (auto &bb : bootstrapBuilds) {
-                        bb.Clean();
-                        bb.Package();
-                        bb.Clean();
-                        Exec::setenv(env);
-                        {
-                            std::string pkg{bb.GetName()};
-                            pkg.append("-");
-                            pkg.append(bb.GetVersion());
-                            pkg.append(".pkg");
-                            pkg = builddir / pkg;
-                            Unpack unpack{pkg, bootstrapdirStr};
-                        }
-                    }
-                    std::cout << "==> Bootstrap build complete\n";
-                    Exec::setenv(originalEnv);
                 }
-                return 0;
-            } else if (tooling == Tooling::STATIC_FILES) {
-                Fork extract([] () {
-                    Exec exec{"cpio"};
-                    std::vector<std::string> args{};
-                    args.emplace_back("--extract");
-                    exec.exec(args, Exec::getenv());
-                    return 0;
-                }, ForkInputOutput::INPUT);
-                path files = port->GetRoot() / "files";
-                Fork packing{[&files] () {
-                    if (chdir(files.c_str()) != 0) {
-                        std::cerr << "chdir: build dir: " << files << "\n";
-                        return 1;
-                    }
-                    Exec exec{"cpio"};
-                    std::vector<std::string> args{};
-                    args.emplace_back("--create");
-                    exec.exec(args, Exec::getenv());
-                    return 0;
-                }, ForkInputOutput::INPUTOUTPUT};
-                std::string list = FileListString(ListFiles(files));
-                Fork submit{[&packing, &list] () {
-                    packing << list;
-                    packing.CloseInput();
-                    return 0;
-                }};
-                packing.CloseInput();
-                extract << packing;
-                extract.CloseInput();
-                submit.Require();
-                packing.Require();
-                extract.Require();
-                return 0;
-            } else {
-                Exec make{"make"};
-                std::vector<std::string> args{};
-                if (tooling == Tooling::CMAKE) {
-                    args.emplace_back("VERBOSE=1");
-                }
-                for (auto &target: buildTargets) {
-                    std::string targetVal{target};
-                    ReplaceVars(targetVal);
-                    args.emplace_back(targetVal);
-                }
-                auto env = Exec::getenv();
-                Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
-                buildenv.FilterEnv(env);
-                ApplyEnv(buildenv.Sysroot(), env);
-                make.exec(args, env);
-                return 0;
+                std::cout << "==> Bootstrap build complete\n";
+                Exec::setenv(originalEnv);
             }
-        }};
-        f.Require();
+        } else {
+            Fork f{[this, builddir, tooling]() {
+                if (chdir(builddir.c_str()) != 0) {
+                    std::cerr << "chdir: build dir: " << builddir << "\n";
+                    return 1;
+                }
+                if (tooling == Tooling::STATIC_FILES) {
+                    Fork extract([]() {
+                        Exec exec{"cpio"};
+                        std::vector<std::string> args{};
+                        args.emplace_back("--extract");
+                        exec.exec(args, Exec::getenv());
+                        return 0;
+                    }, ForkInputOutput::INPUT);
+                    path files = port->GetRoot() / "files";
+                    Fork packing{[&files]() {
+                        if (chdir(files.c_str()) != 0) {
+                            std::cerr << "chdir: build dir: " << files << "\n";
+                            return 1;
+                        }
+                        Exec exec{"cpio"};
+                        std::vector<std::string> args{};
+                        args.emplace_back("--create");
+                        exec.exec(args, Exec::getenv());
+                        return 0;
+                    }, ForkInputOutput::INPUTOUTPUT};
+                    std::string list = FileListString(ListFiles(files));
+                    Fork submit{[&packing, &list]() {
+                        packing << list;
+                        packing.CloseInput();
+                        return 0;
+                    }};
+                    packing.CloseInput();
+                    extract << packing;
+                    extract.CloseInput();
+                    submit.Require();
+                    packing.Require();
+                    extract.Require();
+                    return 0;
+                } else {
+                    Exec make{"make"};
+                    std::vector<std::string> args{};
+                    if (tooling == Tooling::CMAKE) {
+                        args.emplace_back("VERBOSE=1");
+                    }
+                    for (auto &target: buildTargets) {
+                        std::string targetVal{target};
+                        ReplaceVars(targetVal);
+                        args.emplace_back(targetVal);
+                    }
+                    auto env = Exec::getenv();
+                    Buildenv buildenv{cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
+                    buildenv.FilterEnv(env);
+                    ApplyEnv(buildenv.Sysroot(), env);
+                    make.exec(args, env);
+                    return 0;
+                }
+            }};
+            f.Require();
+        }
     } else {
         throw BuildException("Build dir not found");
     }
