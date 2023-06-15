@@ -3,10 +3,15 @@
 //
 
 #include "Buildenv.h"
+#include "Sysconfig.h"
 #include <cctype>
 #include <algorithm>
 
-Buildenv::Buildenv(const std::string &cxxflags, const std::string &ldflags, const std::string &sysrootCxxflags, const std::string &sysrootLdflags, bool requiresClang) : cxxflags(cxxflags), ldflags(ldflags), sysrootCxxflags(sysrootCxxflags), sysrootLdflags(sysrootLdflags), sysroot(), requiresClang(requiresClang) {}
+Buildenv::Buildenv(const Sysconfig &sysconfig, const std::string &cxxflags, const std::string &ldflags, const std::string &sysrootCxxflags, const std::string &sysrootLdflags, bool requiresClang) : cflags(), cxxflags(cxxflags), ldflags(ldflags), sysrootCxxflags(sysrootCxxflags), sysrootLdflags(sysrootLdflags), sysroot(), requiresClang(requiresClang) {
+    sysconfig.AppendCflags(this->cflags);
+    sysconfig.AppendCxxflags(this->cxxflags);
+    sysconfig.AppendLdflags(this->ldflags);
+}
 
 void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
     std::map<std::string,std::string>::iterator end = env.end();
@@ -152,6 +157,11 @@ void Buildenv::FilterEnv(std::map<std::string,std::string> &env) {
         cxxflags = musl_cxxflags;
 
         add_cxxflags = true;
+    }
+    if (!(this->cflags.empty())) {
+        cflags.append(" ");
+        cflags.append(this->cflags);
+        add_cflags = true;
     }
     if (!(this->cxxflags.empty())) {
         cxxflags.append(" ");

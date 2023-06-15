@@ -75,6 +75,7 @@ private:
 public:
     void Clean();
     void Configure(const std::vector<std::string> &flags = {});
+    void MakeBootstrap(const std::vector<std::string> &flags = {});
     void Make(const std::vector<std::string> &flags = {});
     void Install(const std::vector<std::string> &flags = {});
     void Package(const std::vector<std::string> &flags = {});

@@ -8,8 +8,11 @@
 #include <string>
 #include <map>
 
+class Sysconfig;
+
 class Buildenv {
 private:
+    std::string cflags;
     std::string cxxflags;
     std::string ldflags;
     std::string sysrootCxxflags;
@@ -17,7 +20,7 @@ private:
     std::string sysroot;
     bool requiresClang;
 public:
-    Buildenv(const std::string &cxxflags, const std::string &ldflags, const std::string &sysrootCxxflags, const std::string &sysrootLdflags, bool requiresClang);
+    Buildenv(const Sysconfig &sysconfig, const std::string &cxxflags, const std::string &ldflags, const std::string &sysrootCxxflags, const std::string &sysrootLdflags, bool requiresClang);
     void FilterEnv(std::map<std::string,std::string> &env);
     std::string Sysroot() {
         return sysroot;
