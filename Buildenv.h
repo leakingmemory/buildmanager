@@ -17,10 +17,11 @@ private:
     std::string ldflags;
     std::string sysrootCxxflags;
     std::string sysrootLdflags;
+    std::string nosysrootLdflags;
     std::string sysroot;
     bool requiresClang;
 public:
-    Buildenv(const Sysconfig &sysconfig, const std::string &cxxflags, const std::string &ldflags, const std::string &sysrootCxxflags, const std::string &sysrootLdflags, bool requiresClang);
+    Buildenv(const Sysconfig &sysconfig, const std::string &cxxflags, const std::string &ldflags, const std::string &sysrootCxxflags, const std::string &sysrootLdflags, const std::string &nosysrootLdflags, bool requiresClang);
     void FilterEnv(std::map<std::string,std::string> &env);
     std::string Sysroot() {
         return sysroot;

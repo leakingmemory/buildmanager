@@ -79,7 +79,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), installTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), buildTargets(), installTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -498,6 +498,24 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
             }
         }
         {
+            auto iterator = jsonData.find("nosysroot");
+            if (iterator != jsonData.end()) {
+                auto &nosysrootItem = *iterator;
+                if (nosysrootItem.is_object()) {
+                    {
+                        auto iterator = nosysrootItem.find("ldflags");
+                        if (iterator != nosysrootItem.end()) {
+                            auto &ldflags = *iterator;
+                            if (ldflags.is_string()) {
+                                nosysrootLdflags = ldflags;
+                                ReplaceVars(nosysrootLdflags);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        {
             auto iterator = jsonData.find("patches");
             if (iterator != jsonData.end()) {
                 auto &patches = *iterator;
@@ -563,7 +581,7 @@ void Build::ReplaceVars(std::string &str) const {
     ::ReplaceVars(str, "{CFLAGS}", [this] () {
         auto env = Exec::getenv();
         Sysconfig sysconfig{};
-        Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
+        Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, requiresClang};
         buildenv.FilterEnv(env);
         std::string cflags{};
         for (const auto &pair : env) {
@@ -741,7 +759,7 @@ void Build::Configure(const std::vector<std::string> &flags) {
     }
     auto env = Exec::getenv();
     Sysconfig sysconfig{};
-    Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
+    Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, requiresClang};
     buildenv.FilterEnv(env);
     std::string sysroot = buildenv.Sysroot();
     ApplyEnv(sysroot, env);
@@ -1222,7 +1240,7 @@ void Build::Make(const std::vector<std::string> &flags) {
                     }
                     auto env = Exec::getenv();
                     Sysconfig sysconfig{};
-                    Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
+                    Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, requiresClang};
                     buildenv.FilterEnv(env);
                     ApplyEnv(buildenv.Sysroot(), env);
                     make.exec(args, env);
@@ -1318,7 +1336,7 @@ void Build::Install(const std::vector<std::string> &flags) {
                 }
                 auto env = Exec::getenv();
                 Sysconfig sysconfig{};
-                Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, requiresClang};
+                Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, requiresClang};
                 buildenv.FilterEnv(env);
                 ApplyEnv(buildenv.Sysroot(), env);
                 make.exec(args, env);

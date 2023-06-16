@@ -39,6 +39,7 @@ class Build {
     std::string sysrootCxxflags;
     std::string sysrootLdflags;
     std::string sysrootCmake;
+    std::string nosysrootLdflags;
     std::vector<std::string> buildTargets;
     std::vector<std::string> installTargets;
     std::vector<std::vector<std::string>> beforeConfigure;
@@ -55,7 +56,7 @@ class Build {
     bool requiresClang;
     bool valid;
 public:
-    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), buildTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), installTargets(), patches(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false) {}
+    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), buildTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), installTargets(), patches(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false) {}
     Build(const std::shared_ptr<const Port> &port, path buildfile);
 private:
     void ReplaceVars(std::string &str) const;
