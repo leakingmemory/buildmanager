@@ -35,7 +35,7 @@ public:
             ldflags = this->ldflags;
         } else if (!this->ldflags.empty()) {
             ldflags.append(" ");
-            ldflags.append(ldflags);
+            ldflags.append(this->ldflags);
         }
     }
 };
