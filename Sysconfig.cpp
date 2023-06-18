@@ -10,7 +10,7 @@
 
 using path = std::filesystem::path;
 
-Sysconfig::Sysconfig() : cflags(), cxxflags(), ldflags() {
+Sysconfig::Sysconfig() : cflags(), cxxflags(), ldflags(), cc(), cxx() {
     std::string configfile{"/etc/buildmanager.conf"};
     path configfilePath{};
     configfilePath = configfile;
@@ -45,6 +45,24 @@ Sysconfig::Sysconfig() : cflags(), cxxflags(), ldflags() {
                 auto &item = *iterator;
                 if (item.is_string()) {
                     ldflags = item;
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("cc");
+            if (iterator != jsonData.end()) {
+                auto &item = *iterator;
+                if (item.is_string()) {
+                    cc = item;
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("cxx");
+            if (iterator != jsonData.end()) {
+                auto &item = *iterator;
+                if (item.is_string()) {
+                    cxx = item;
                 }
             }
         }

@@ -20,6 +20,8 @@ private:
     std::string nosysrootLdflags;
     std::string nobootstrapLdflags;
     std::string sysroot;
+    std::string cc;
+    std::string cxx;
     bool requiresClang;
     bool bootstrappingBuild;
 public:

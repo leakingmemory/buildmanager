@@ -12,6 +12,8 @@ private:
     std::string cflags;
     std::string cxxflags;
     std::string ldflags;
+    std::string cc;
+    std::string cxx;
 public:
     Sysconfig();
     void AppendCflags(std::string &cflags) const {
@@ -37,6 +39,12 @@ public:
             ldflags.append(" ");
             ldflags.append(this->ldflags);
         }
+    }
+    std::string GetCc() const {
+        return cc;
+    }
+    std::string GetCxx() const {
+        return cxx;
     }
 };
 
