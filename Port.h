@@ -23,7 +23,7 @@ private:
 public:
     Port(const std::shared_ptr<const PortGroup> &group, path groupRoot, std::string name);
     [[nodiscard]] std::vector<Build> GetBuilds() const;
-    [[nodiscard]] Build GetBuild(const std::string &name) const;
+    [[nodiscard]] Build GetBuild(const std::string &name, const std::vector<std::string> &flags) const;
     [[nodiscard]] std::string GetName() const {
         return name;
     }

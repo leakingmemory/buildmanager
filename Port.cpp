@@ -10,13 +10,14 @@ Port::Port(const std::shared_ptr<const PortGroup> &group, path groupRoot, std::s
 
 std::vector<Build> Port::GetBuilds() const {
     std::vector<Build> builds{};
+    std::vector<std::string> flags{};
     {
         std::filesystem::directory_iterator iterator{root};
         auto shared = shared_from_this();
         for (const auto &item : iterator) {
             std::string filename = item.path().filename();
             if (item.is_regular_file() && filename.ends_with(".build")) {
-                builds.emplace_back(shared, item.path());
+                builds.emplace_back(shared, item.path(), flags);
             }
         }
     }
@@ -33,10 +34,10 @@ std::vector<Build> Port::GetBuilds() const {
     return builds;
 }
 
-Build Port::GetBuild(const std::string &name) const {
+Build Port::GetBuild(const std::string &name, const std::vector<std::string> &flags) const {
     std::stringstream filename{};
     filename << this->name << "-" << name << ".build";
-    Build build{shared_from_this(), root / filename.str()};
+    Build build{shared_from_this(), root / filename.str(), flags};
     return build;
 }
 

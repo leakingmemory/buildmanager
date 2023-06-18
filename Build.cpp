@@ -21,7 +21,7 @@ extern "C" {
 #include <unistd.h>
 }
 
-Build GetBuild(Ports &ports, const std::string &buildName) {
+Build GetBuild(Ports &ports, const std::string &buildName, const std::vector<std::string> &flags) {
     std::string groupName{};
     std::string portName{};
     std::string version{};
@@ -61,7 +61,7 @@ Build GetBuild(Ports &ports, const std::string &buildName) {
         std::cerr << buildName << ": Port " << portName << " not found.\n";
         return {};
     }
-    auto build = port->GetBuild(version);
+    auto build = port->GetBuild(version, flags);
     if (!build.IsValid()) {
         std::cerr << buildName << ": Build " << version << " not fount.\n";
         return {};
@@ -79,7 +79,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), buildTargets(), installTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -205,7 +205,7 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                 auto &item = *iterator;
                 if (item.is_string()) {
                     cxxflags = item;
-                    ReplaceVars(cxxflags);
+                    ReplaceVars(flags, cxxflags);
                 }
             }
         }
@@ -215,7 +215,7 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                 auto &item = *iterator;
                 if (item.is_string()) {
                     ldflags = item;
-                    ReplaceVars(ldflags);
+                    ReplaceVars(flags, ldflags);
                 }
             }
         }
@@ -470,7 +470,7 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                             auto &cxxflags = *iterator;
                             if (cxxflags.is_string()) {
                                 sysrootCxxflags = cxxflags;
-                                ReplaceVars(sysrootCxxflags);
+                                ReplaceVars(flags, sysrootCxxflags);
                             }
                         }
                     }
@@ -480,7 +480,7 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                             auto &ldflags = *iterator;
                             if (ldflags.is_string()) {
                                 sysrootLdflags = ldflags;
-                                ReplaceVars(sysrootLdflags);
+                                ReplaceVars(flags, sysrootLdflags);
                             }
                         }
                     }
@@ -490,7 +490,7 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                             auto &ldflags = *iterator;
                             if (ldflags.is_string()) {
                                 sysrootCmake = ldflags;
-                                ReplaceVars(sysrootCmake);
+                                ReplaceVars(flags, sysrootCmake);
                             }
                         }
                     }
@@ -508,7 +508,25 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile) : port(por
                             auto &ldflags = *iterator;
                             if (ldflags.is_string()) {
                                 nosysrootLdflags = ldflags;
-                                ReplaceVars(nosysrootLdflags);
+                                ReplaceVars(flags, nosysrootLdflags);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("nobootstrap");
+            if (iterator != jsonData.end()) {
+                auto &nobootstrapItem = *iterator;
+                if (nobootstrapItem.is_object()) {
+                    {
+                        auto iterator = nobootstrapItem.find("ldflags");
+                        if (iterator != nobootstrapItem.end()) {
+                            auto &ldflags = *iterator;
+                            if (ldflags.is_string()) {
+                                nobootstrapLdflags = ldflags;
+                                ReplaceVars(flags, nobootstrapLdflags);
                             }
                         }
                     }
@@ -553,7 +571,16 @@ static void ReplaceVars(std::string &str, const std::string &key, const std::fun
     }
 }
 
-void Build::ReplaceVars(std::string &str) const {
+static bool IsBootstrapping(const std::vector<std::string> &flags) {
+    for (const auto &flag : flags) {
+        if (flag == "bootstrapping") {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Build::ReplaceVars(const std::vector<std::string> &flags, std::string &str) const {
     ::ReplaceVars(str, "{WORKDIR}", [this] () {
         std::string workdirStr;
         {
@@ -578,10 +605,10 @@ void Build::ReplaceVars(std::string &str) const {
         }
         return sysroot;
     });
-    ::ReplaceVars(str, "{CFLAGS}", [this] () {
+    ::ReplaceVars(str, "{CFLAGS}", [this, &flags] () {
         auto env = Exec::getenv();
         Sysconfig sysconfig{};
-        Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, requiresClang};
+        Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
         buildenv.FilterEnv(env);
         std::string cflags{};
         for (const auto &pair : env) {
@@ -608,14 +635,14 @@ void Build::ApplyEnv(const std::string &sysroot, std::map<std::string,std::strin
                 std::transform(foundKey.begin(), foundKey.end(), foundKey.begin(), [] (const char c) { return std::tolower(c); });
                 if (key == foundKey) {
                     found = true;
-                    ReplaceVars(value);
+                    ReplaceVars(flags, value);
                     pair.second = value;
                     break;
                 }
             }
             key = pair.first;
             if (!found) {
-                ReplaceVars(value);
+                ReplaceVars(flags, value);
                 env.insert_or_assign(key, value);
             }
         }
@@ -711,7 +738,7 @@ void Build::Clean() {
     }
 }
 
-void Build::Configure(const std::vector<std::string> &flags) {
+void Build::Configure() {
     path workdir = port->GetRoot() / "work";
     if (exists(workdir / "configured")) {
         return;
@@ -759,7 +786,8 @@ void Build::Configure(const std::vector<std::string> &flags) {
     }
     auto env = Exec::getenv();
     Sysconfig sysconfig{};
-    Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, requiresClang};
+    Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags,
+                      nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
     buildenv.FilterEnv(env);
     std::string sysroot = buildenv.Sysroot();
     ApplyEnv(sysroot, env);
@@ -836,7 +864,7 @@ void Build::Configure(const std::vector<std::string> &flags) {
                     }
                 }
                 for (auto &param : conf) {
-                    ReplaceVars(param);
+                    ReplaceVars(flags, param);
                 }
                 sh.exec(conf, env);
             } else if (tooling == Tooling::CMAKE) {
@@ -847,7 +875,7 @@ void Build::Configure(const std::vector<std::string> &flags) {
                 std::string cmake{"cmake"};
                 if (!sysrootCmake.empty()) {
                     cmake = sysrootCmake;
-                    ReplaceVars(cmake);
+                    ReplaceVars(flags, cmake);
                 }
                 Exec exec{cmake};
                 std::vector<std::string> cmk{};
@@ -876,7 +904,7 @@ void Build::Configure(const std::vector<std::string> &flags) {
                     cmk.emplace_back(builddir);
                 }
                 for (auto &param : cmk) {
-                    ReplaceVars(param);
+                    ReplaceVars(flags, param);
                 }
                 exec.exec(cmk, env);
             }
@@ -928,7 +956,7 @@ std::string FileListString(const std::vector<std::filesystem::path> &paths) {
     return fileListStr;
 }
 
-void Build::MakeBootstrap(const std::vector<std::string> &flags) {
+void Build::MakeBootstrap() {
     path workdir = port->GetRoot() / "work";
     path builddir = workdir / this->builddir;
     if (chdir(builddir.c_str()) != 0) {
@@ -936,17 +964,25 @@ void Build::MakeBootstrap(const std::vector<std::string> &flags) {
         throw BuildException("bootstrap chdir to build");
     }
     auto ports = Ports::Create(port->GetGroup()->GetPortsRoot()->GetRoot().c_str());
-    auto build = GetBuild(*ports, libc);
+    std::vector<std::string> bootstrapFlags{};
+    std::vector<std::string> staticFlags{};
+    for (const auto &flag : flags) {
+        bootstrapFlags.emplace_back(flag);
+        staticFlags.emplace_back(flag);
+    }
+    bootstrapFlags.emplace_back("bootstrapping");
+    staticFlags.emplace_back("static");
+    auto build = GetBuild(*ports, libc, bootstrapFlags);
     if (!build.IsValid()) {
         std::cerr << "Bootstrap libc was not found: " << libc << "\n";
         throw BuildException("Bootstrap libc not found");
     }
-    auto libcppHeaderOnlyBuild = GetBuild(*ports, libcppHeaderBuild);
+    auto libcppHeaderOnlyBuild = GetBuild(*ports, libcppHeaderBuild, staticFlags);
     if (!libcppHeaderOnlyBuild.IsValid()) {
         std::cerr << "Bootstrap libcpp header build was not found: " << libcpp << "\n";
         throw BuildException("Bootstrap libcpp header not found");
     }
-    auto libcppBuild = GetBuild(*ports, libcpp);
+    auto libcppBuild = GetBuild(*ports, libcpp, bootstrapFlags);
     if (!libcppBuild.IsValid()) {
         std::cerr << "Bootstrap libcpp was not found: " << libcpp << "\n";
         throw BuildException("Bootstrap libcpp not found");
@@ -961,7 +997,7 @@ void Build::MakeBootstrap(const std::vector<std::string> &flags) {
         env.insert_or_assign("SYSROOT", bootstrapdirStr);
         Exec::setenv(env);
         for (const auto &bootstrapName: this->bootstrap) {
-            auto build = GetBuild(*ports, bootstrapName);
+            auto build = GetBuild(*ports, bootstrapName, bootstrapFlags);
             if (!build.IsValid()) {
                 std::cerr << "Build " << bootstrapName << " not found.\n";
                 throw BuildException("Build not found");
@@ -971,7 +1007,7 @@ void Build::MakeBootstrap(const std::vector<std::string> &flags) {
         Exec::setenv(originalEnv);
     }
     for (const auto &bootstrapName: this->staticBootstrap) {
-        auto build = GetBuild(*ports, bootstrapName);
+        auto build = GetBuild(*ports, bootstrapName, staticFlags);
         if (!build.IsValid()) {
             std::cerr << "Build " << bootstrapName << " not found.\n";
             throw BuildException("Build not found");
@@ -983,11 +1019,9 @@ void Build::MakeBootstrap(const std::vector<std::string> &flags) {
         bb.Fetch();
     }
     auto restoreEnv = Exec::getenv();
-    std::vector<std::string> staticFlags{};
-    staticFlags.emplace_back("static");
     for (auto &bb: bootstrapStaticBuilds) {
         bb.Clean();
-        bb.Package(staticFlags);
+        bb.Package();
         bb.Clean();
         Exec::setenv(restoreEnv);
     }
@@ -1167,12 +1201,12 @@ void Build::MakeBootstrap(const std::vector<std::string> &flags) {
     }
 }
 
-void Build::Make(const std::vector<std::string> &flags) {
+void Build::Make() {
     path workdir = port->GetRoot() / "work";
     if (exists(workdir / "built")) {
         return;
     }
-    Configure(flags);
+    Configure();
     std::cout << "==> Building " << GetName() << "-" << GetVersion() << "\n";
     path builddir = workdir / this->builddir;
     auto tooling = GetTooling();
@@ -1183,8 +1217,8 @@ void Build::Make(const std::vector<std::string> &flags) {
     }
     if (exists(builddir) && is_directory(builddir)) {
         if (tooling == Tooling::BOOTSTRAP) {
-            Fork f{[this, &flags] () {
-                MakeBootstrap(flags);
+            Fork f{[this] () {
+                MakeBootstrap();
                 return 0;
             }};
             f.Require();
@@ -1235,12 +1269,12 @@ void Build::Make(const std::vector<std::string> &flags) {
                     }
                     for (auto &target: buildTargets) {
                         std::string targetVal{target};
-                        ReplaceVars(targetVal);
+                        ReplaceVars(flags, targetVal);
                         args.emplace_back(targetVal);
                     }
                     auto env = Exec::getenv();
                     Sysconfig sysconfig{};
-                    Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, requiresClang};
+                    Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
                     buildenv.FilterEnv(env);
                     ApplyEnv(buildenv.Sysroot(), env);
                     make.exec(args, env);
@@ -1255,12 +1289,12 @@ void Build::Make(const std::vector<std::string> &flags) {
     create_directory(workdir / "built");
 }
 
-void Build::Install(const std::vector<std::string> &flags) {
+void Build::Install() {
     path workdir = port->GetRoot() / "work";
     if (exists(workdir / "installed")) {
         return;
     }
-    Make(flags);
+    Make();
     std::cout << "==> Installing " << GetName() << "-" << GetVersion() << "\n";
     path builddir = workdir / this->builddir;
     auto tooling = GetTooling();
@@ -1331,12 +1365,12 @@ void Build::Install(const std::vector<std::string> &flags) {
                 }
                 for (const auto &target: installTargets) {
                     std::string targetVal{target};
-                    ReplaceVars(targetVal);
+                    ReplaceVars(flags, targetVal);
                     args.emplace_back(targetVal);
                 }
                 auto env = Exec::getenv();
                 Sysconfig sysconfig{};
-                Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, requiresClang};
+                Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
                 buildenv.FilterEnv(env);
                 ApplyEnv(buildenv.Sysroot(), env);
                 make.exec(args, env);
@@ -1373,8 +1407,8 @@ void Build::Install(const std::vector<std::string> &flags) {
     create_directory(workdir / "installed");
 }
 
-void Build::Package(const std::vector<std::string> &flags) {
-    Install(flags);
+void Build::Package() {
+    Install();
     std::cout << "==> Packaging " << GetName() << "-" << GetVersion() << "\n";
     path installdir = port->GetRoot() / "work" / "install";
     if (!exists(installdir) || !is_directory(installdir)) {

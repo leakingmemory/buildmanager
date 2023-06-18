@@ -17,7 +17,7 @@ enum class Tooling;
 
 class Build;
 
-Build GetBuild(Ports &ports, const std::string &buildName);
+Build GetBuild(Ports &ports, const std::string &buildName, const std::vector<std::string> &flags);
 
 class Build {
     std::shared_ptr<const Port> port;
@@ -40,6 +40,7 @@ class Build {
     std::string sysrootLdflags;
     std::string sysrootCmake;
     std::string nosysrootLdflags;
+    std::string nobootstrapLdflags;
     std::vector<std::string> buildTargets;
     std::vector<std::string> installTargets;
     std::vector<std::vector<std::string>> beforeConfigure;
@@ -55,11 +56,14 @@ class Build {
     bool configureSysrootOverrides;
     bool requiresClang;
     bool valid;
+
+    /* dynamic/user provided: */
+    std::vector<std::string> flags;
 public:
-    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), buildTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), installTargets(), patches(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false) {}
-    Build(const std::shared_ptr<const Port> &port, path buildfile);
+    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), installTargets(), patches(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false), flags() {}
+    Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags);
 private:
-    void ReplaceVars(std::string &str) const;
+    void ReplaceVars(const std::vector<std::string> &flags, std::string &str) const;
     void ApplyEnv(const std::string &sysroot, std::map<std::string,std::string> &env);
 public:
     [[nodiscard]] std::string GetName() const;
@@ -75,11 +79,11 @@ private:
     Tooling GetTooling() const;
 public:
     void Clean();
-    void Configure(const std::vector<std::string> &flags = {});
-    void MakeBootstrap(const std::vector<std::string> &flags = {});
-    void Make(const std::vector<std::string> &flags = {});
-    void Install(const std::vector<std::string> &flags = {});
-    void Package(const std::vector<std::string> &flags = {});
+    void Configure();
+    void MakeBootstrap();
+    void Make();
+    void Install();
+    void Package();
 };
 
 

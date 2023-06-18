@@ -56,7 +56,7 @@ static int ListBuilds(Ports &ports, const std::string &portName) {
 
 
 static int Fetch(Ports &ports, const std::string &buildName) {
-    Build build = GetBuild(ports, buildName);
+    Build build = GetBuild(ports, buildName, {});
     if (build.IsValid()) {
         build.Fetch();
         return 0;
@@ -66,7 +66,7 @@ static int Fetch(Ports &ports, const std::string &buildName) {
 }
 
 static int Extract(Ports &ports, const std::string &buildName) {
-    Build build = GetBuild(ports, buildName);
+    Build build = GetBuild(ports, buildName, {});
     if (build.IsValid()) {
         build.Extract();
         return 0;
@@ -76,7 +76,7 @@ static int Extract(Ports &ports, const std::string &buildName) {
 }
 
 static int Clean(Ports &ports, const std::string &buildName) {
-    Build build = GetBuild(ports, buildName);
+    Build build = GetBuild(ports, buildName, {});
     if (build.IsValid()) {
         build.Clean();
         return 0;
@@ -86,7 +86,7 @@ static int Clean(Ports &ports, const std::string &buildName) {
 }
 
 static int Configure(Ports &ports, const std::string &buildName) {
-    Build build = GetBuild(ports, buildName);
+    Build build = GetBuild(ports, buildName, {});
     if (build.IsValid()) {
         build.Configure();
         return 0;
@@ -96,7 +96,7 @@ static int Configure(Ports &ports, const std::string &buildName) {
 }
 
 static int Make(Ports &ports, const std::string &buildName) {
-    Build build = GetBuild(ports, buildName);
+    Build build = GetBuild(ports, buildName, {});
     if (build.IsValid()) {
         build.Make();
         return 0;
@@ -106,7 +106,7 @@ static int Make(Ports &ports, const std::string &buildName) {
 }
 
 static int Install(Ports &ports, const std::string &buildName) {
-    Build build = GetBuild(ports, buildName);
+    Build build = GetBuild(ports, buildName, {});
     if (build.IsValid()) {
         build.Install();
         return 0;
@@ -116,7 +116,7 @@ static int Install(Ports &ports, const std::string &buildName) {
 }
 
 static int Package(Ports &ports, const std::string &buildName) {
-    Build build = GetBuild(ports, buildName);
+    Build build = GetBuild(ports, buildName, {});
     if (build.IsValid()) {
         build.Package();
         return 0;
