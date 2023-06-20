@@ -513,6 +513,23 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                         }
                     }
                 }
+                {
+                    auto iterator = nosysrootItem.find("env");
+                    if (iterator != nosysrootItem.end()) {
+                        auto &sysrootEnv = *iterator;
+                        if (sysrootEnv.is_object()) {
+                            for (const auto &item : sysrootEnv.items()) {
+                                std::string key = item.key();
+                                const auto &value = item.value();
+                                if (!value.is_string()) {
+                                    continue;
+                                }
+                                std::string valueAsString = value;
+                                this->nosysrootEnv.insert_or_assign(key, valueAsString);
+                            }
+                        }
+                    }
+                }
             }
         }
         {
@@ -624,7 +641,29 @@ void Build::ReplaceVars(const std::vector<std::string> &flags, std::string &str)
 }
 
 void Build::ApplyEnv(const std::string &sysroot, std::map<std::string,std::string> &env) {
-    if (!sysroot.empty()) {
+    if (sysroot.empty()) {
+        for (const auto &pair : nosysrootEnv) {
+            std::string key = pair.first;
+            std::transform(key.begin(), key.end(), key.begin(), [] (const char c) { return std::tolower(c); });
+            std::string value = pair.second;
+            bool found{false};
+            for (auto &pair : env) {
+                std::string foundKey = pair.first;
+                std::transform(foundKey.begin(), foundKey.end(), foundKey.begin(), [] (const char c) { return std::tolower(c); });
+                if (key == foundKey) {
+                    found = true;
+                    ReplaceVars(flags, value);
+                    pair.second = value;
+                    break;
+                }
+            }
+            key = pair.first;
+            if (!found) {
+                ReplaceVars(flags, value);
+                env.insert_or_assign(key, value);
+            }
+        }
+    } else {
         for (const auto &pair : sysrootEnv) {
             std::string key = pair.first;
             std::transform(key.begin(), key.end(), key.begin(), [] (const char c) { return std::tolower(c); });
