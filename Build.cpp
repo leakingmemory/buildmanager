@@ -79,7 +79,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), beforeConfigure(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -320,6 +320,40 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                         auto skipValue = *skip;
                         if (skipValue.is_boolean()) {
                             this->configureSkip = skipValue;
+                        }
+                    }
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("build");
+            if (iterator != jsonData.end()) {
+                auto &build = *iterator;
+                {
+                    auto iterator = build.find("before");
+                    if (iterator != build.end()) {
+                        auto &before = *iterator;
+                        if (before.is_array()) {
+                            auto iterator = before.begin();
+                            while (iterator != before.end()) {
+                                auto &cmd = *iterator;
+                                if (cmd.is_array()) {
+                                    std::vector<std::string> argv{};
+                                    auto iterator = cmd.begin();
+                                    while (iterator != cmd.end()) {
+                                        auto c = *iterator;
+                                        if (c.is_string()) {
+                                            std::string cstr = c;
+                                            argv.emplace_back(cstr);
+                                        }
+                                        ++iterator;
+                                    }
+                                    if (!argv.empty()) {
+                                        beforeBuild.emplace_back(argv);
+                                    }
+                                }
+                                ++iterator;
+                            }
                         }
                     }
                 }
@@ -638,6 +672,15 @@ void Build::ReplaceVars(const std::vector<std::string> &flags, std::string &str)
         }
         return cflags;
     });
+    ::ReplaceVars(str, "{BUILDDIR}", [this] () {
+        std::string builddirStr{};
+        {
+            path workdir = port->GetRoot() / "work";
+            path builddir = workdir / this->builddir;
+            builddirStr = builddir;
+        }
+        return builddirStr;
+    });
 }
 
 void Build::ApplyEnv(const std::string &sysroot, std::map<std::string,std::string> &env) {
@@ -742,7 +785,8 @@ enum class Tooling {
     CMAKE,
     BOOTSTRAP,
     STATIC_FILES,
-    MESON
+    MESON,
+    CUSTOM
 };
 
 Tooling Build::GetTooling() const {
@@ -756,6 +800,8 @@ Tooling Build::GetTooling() const {
         return Tooling::STATIC_FILES;
     } else if (this->tooling == "meson") {
         return Tooling::MESON;
+    } else if (this->tooling == "custom") {
+        return Tooling::CUSTOM;
     }
     throw BuildException("Tooling not found");
 }
@@ -1304,7 +1350,37 @@ void Build::Make() {
             }};
             f.Require();
         } else {
-            Fork f{[this, builddir, tooling]() {
+            auto env = Exec::getenv();
+            Sysconfig sysconfig{};
+            Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
+            buildenv.FilterEnv(env);
+            ApplyEnv(buildenv.Sysroot(), env);
+            for (const auto &cmd : beforeBuild) {
+                auto iterator = cmd.begin();
+                if (iterator == cmd.end()) {
+                    continue;
+                }
+                auto cmdexec = *iterator;
+                ReplaceVars(flags, cmdexec);
+                ++iterator;
+                std::vector<std::string> args{};
+                while (iterator != cmd.end()) {
+                    auto &arg = args.emplace_back(*iterator);
+                    ReplaceVars(flags, arg);
+                    ++iterator;
+                }
+                Fork f{[&builddir, &cmdexec, &args, &env] () {
+                    if (chdir(builddir.c_str()) != 0) {
+                        std::cerr << "chdir: build dir: " << builddir << "\n";
+                        return 1;
+                    }
+                    Exec e{cmdexec};
+                    e.exec(args, env);
+                    return 0;
+                }};
+                f.Require();
+            }
+            Fork f{[this, builddir, tooling, &env]() {
                 if (chdir(builddir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << builddir << "\n";
                     return 1;
@@ -1341,8 +1417,7 @@ void Build::Make() {
                     submit.Require();
                     packing.Require();
                     extract.Require();
-                    return 0;
-                } else {
+                } else if (tooling != Tooling::CUSTOM) {
                     std::string makecmd{};
                     if (exists(path("Makefile"))) {
                         makecmd = "make";
@@ -1361,14 +1436,9 @@ void Build::Make() {
                         ReplaceVars(flags, targetVal);
                         args.emplace_back(targetVal);
                     }
-                    auto env = Exec::getenv();
-                    Sysconfig sysconfig{};
-                    Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
-                    buildenv.FilterEnv(env);
-                    ApplyEnv(buildenv.Sysroot(), env);
                     make.exec(args, env);
-                    return 0;
                 }
+                return 0;
             }};
             f.Require();
         }
@@ -1438,7 +1508,7 @@ void Build::Install() {
             submit.Require();
             packing.Require();
             extract.Require();
-        } else {
+        } else if (tooling != Tooling::CUSTOM) {
             Fork f{[this, builddir, installdir]() {
                 if (chdir(builddir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << builddir << "\n";
@@ -1491,21 +1561,35 @@ void Build::Install() {
             }};
         }
          auto env = Exec::getenv();
+        std::string runInDir = installdir;
         for (const auto &cmd : postInstall) {
             auto iterator = cmd.begin();
             if (iterator == cmd.end()) {
                 continue;
             }
             auto cmdexec = *iterator;
+            ReplaceVars(flags, cmdexec);
             ++iterator;
             std::vector<std::string> args{};
             while (iterator != cmd.end()) {
-                args.emplace_back(*iterator);
+                auto &arg = args.emplace_back(*iterator);
+                ReplaceVars(flags, arg);
                 ++iterator;
             }
-            Fork f{[&installdir, &cmdexec, &args, &env] () {
-                if (chdir(installdir.c_str()) != 0) {
-                    std::cerr << "chdir: build dir: " << installdir << "\n";
+            if (cmdexec == "cd" && args.size() == 1) {
+                auto dir = args[0];
+                path runInDirP = runInDir;
+                if (dir.starts_with("/")) {
+                    runInDirP = dir;
+                } else {
+                    runInDirP = runInDirP / dir;
+                }
+                runInDir = runInDirP;
+                continue;
+            }
+            Fork f{[&runInDir, &cmdexec, &args, &env] () {
+                if (chdir(runInDir.c_str()) != 0) {
+                    std::cerr << "chdir: build dir: " << runInDir << "\n";
                     return 1;
                 }
                 Exec e{cmdexec};
