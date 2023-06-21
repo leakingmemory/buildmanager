@@ -741,7 +741,8 @@ enum class Tooling {
     CONFIGURE,
     CMAKE,
     BOOTSTRAP,
-    STATIC_FILES
+    STATIC_FILES,
+    MESON
 };
 
 Tooling Build::GetTooling() const {
@@ -753,6 +754,8 @@ Tooling Build::GetTooling() const {
         return Tooling::BOOTSTRAP;
     } else if (this->tooling == "static-files") {
         return Tooling::STATIC_FILES;
+    } else if (this->tooling == "meson") {
+        return Tooling::MESON;
     }
     throw BuildException("Tooling not found");
 }
@@ -807,7 +810,7 @@ void Build::Configure() {
         return;
     }
     auto tooling = GetTooling();
-    if (tooling == Tooling::CMAKE) {
+    if (tooling == Tooling::CMAKE || tooling == Tooling::MESON) {
         if (!exists(cmakeDir)) {
             if (!create_directory(cmakeDir)) {
                 throw BuildException("Unable to create cmake directory");
@@ -946,6 +949,45 @@ void Build::Configure() {
                     ReplaceVars(flags, param);
                 }
                 exec.exec(cmk, env);
+            } else if (tooling == Tooling::MESON) {
+                if (chdir(cmakeDir.c_str()) != 0) {
+                    std::cerr << "chdir: build dir: " << builddir << "\n";
+                    return 1;
+                }
+                Exec sh{"meson"};
+                std::vector<std::string> conf{};
+                for (const std::string &param: configureParams) {
+                    conf.emplace_back(param);
+                }
+                if (!sysroot.empty()) {
+                    for (const std::string &param : sysrootConfigureParams) {
+                        conf.emplace_back(param);
+                    }
+                }
+                if (staticBuild) {
+                    for (const std::string &param: staticConfigureParams) {
+                        conf.emplace_back(param);
+                    }
+                }
+                if (configureDefaultParameters) {
+                    {
+                        std::string prefix{"-Dprefix="};
+                        prefix.append(this->prefix);
+                        conf.emplace_back(prefix);
+                    }
+                    {
+                        std::string bd = cmakeDir;
+                        conf.emplace_back(bd);
+                    }
+                    {
+                        std::string sd = builddir;
+                        conf.emplace_back(sd);
+                    }
+                }
+                for (auto &param : conf) {
+                    ReplaceVars(flags, param);
+                }
+                sh.exec(conf, env);
             }
             return 0;
         }};
@@ -1249,7 +1291,7 @@ void Build::Make() {
     std::cout << "==> Building " << GetName() << "-" << GetVersion() << "\n";
     path builddir = workdir / this->builddir;
     auto tooling = GetTooling();
-    if (tooling == Tooling::CMAKE) {
+    if (tooling == Tooling::CMAKE || tooling == Tooling::MESON) {
         std::string cm{this->builddir};
         cm.append("-cmake");
         builddir = port->GetRoot() / "work" / cm;
@@ -1301,7 +1343,15 @@ void Build::Make() {
                     extract.Require();
                     return 0;
                 } else {
-                    Exec make{"make"};
+                    std::string makecmd{};
+                    if (exists(path("Makefile"))) {
+                        makecmd = "make";
+                    } else if (exists(path("build.ninja"))) {
+                        makecmd = "ninja";
+                    } else {
+                        throw BuildException("Makefile not found");
+                    }
+                    Exec make{makecmd};
                     std::vector<std::string> args{};
                     if (tooling == Tooling::CMAKE) {
                         args.emplace_back("VERBOSE=1");
@@ -1337,7 +1387,7 @@ void Build::Install() {
     std::cout << "==> Installing " << GetName() << "-" << GetVersion() << "\n";
     path builddir = workdir / this->builddir;
     auto tooling = GetTooling();
-    if (tooling == Tooling::CMAKE) {
+    if (tooling == Tooling::CMAKE || tooling == Tooling::MESON) {
         std::string cm{this->builddir};
         cm.append("-cmake");
         builddir = port->GetRoot() / "work" / cm;
@@ -1394,9 +1444,17 @@ void Build::Install() {
                     std::cerr << "chdir: build dir: " << builddir << "\n";
                     return 1;
                 }
-                Exec make{"make"};
+                std::string makecmd{};
+                if (exists(path("Makefile"))) {
+                    makecmd = "make";
+                } else if (exists(path("build.ninja"))) {
+                    makecmd = "ninja";
+                } else {
+                    throw BuildException("Makefile not found");
+                }
+                Exec make{makecmd};
                 std::vector<std::string> args{};
-                {
+                if (makecmd != "ninja") {
                     std::string idir = installdir;
                     std::string destdir{"DESTDIR="};
                     destdir.append(idir);
@@ -1412,6 +1470,22 @@ void Build::Install() {
                 Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
                 buildenv.FilterEnv(env);
                 ApplyEnv(buildenv.Sysroot(), env);
+                if (makecmd == "ninja") {
+                    bool found_destdir{false};
+                    for (auto &ev : env) {
+                        std::string key = ev.first;
+                        std::transform(key.begin(), key.end(), key.begin(), [] (auto c) { return std::tolower(c); });
+                        if (key == "destdir") {
+                            std::string idir = installdir;
+                            ev.second = idir;
+                            found_destdir = true;
+                        }
+                    }
+                    if (!found_destdir) {
+                        std::string idir = installdir;
+                        env.insert_or_assign("DESTDIR", idir);
+                    }
+                }
                 make.exec(args, env);
                 return 0;
             }};
