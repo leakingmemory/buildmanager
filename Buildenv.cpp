@@ -7,7 +7,7 @@
 #include <cctype>
 #include <algorithm>
 
-Buildenv::Buildenv(const Sysconfig &sysconfig, const std::string &cxxflags, const std::string &ldflags, const std::string &sysrootCxxflags, const std::string &sysrootLdflags, const std::string &nosysrootLdflags, const std::string &nobootstrapLdflags, bool requiresClang, bool bootstrappingBuild) : cflags(), cxxflags(cxxflags), ldflags(ldflags), sysrootCxxflags(sysrootCxxflags), sysrootLdflags(sysrootLdflags), nosysrootLdflags(nosysrootLdflags), nobootstrapLdflags(nobootstrapLdflags), sysroot(), cc(), cxx(), requiresClang(requiresClang), bootstrappingBuild(bootstrappingBuild) {
+Buildenv::Buildenv(const Sysconfig &sysconfig, const std::string &cflags, const std::string &cxxflags, const std::string &ldflags, const std::string &sysrootCxxflags, const std::string &sysrootLdflags, const std::string &nosysrootLdflags, const std::string &nobootstrapLdflags, bool requiresClang, bool bootstrappingBuild) : cflags(cflags), cxxflags(cxxflags), ldflags(ldflags), sysrootCxxflags(sysrootCxxflags), sysrootLdflags(sysrootLdflags), nosysrootLdflags(nosysrootLdflags), nobootstrapLdflags(nobootstrapLdflags), sysroot(), cc(), cxx(), requiresClang(requiresClang), bootstrappingBuild(bootstrappingBuild) {
     sysconfig.AppendCflags(this->cflags);
     sysconfig.AppendCxxflags(this->cxxflags);
     sysconfig.AppendLdflags(this->ldflags);

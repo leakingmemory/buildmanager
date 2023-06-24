@@ -79,7 +79,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -196,6 +196,16 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                         }
                         ++iterator;
                     }
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("cflags");
+            if (iterator != jsonData.end()) {
+                auto &item = *iterator;
+                if (item.is_string()) {
+                    cflags = item;
+                    ReplaceVars(flags, cflags);
                 }
             }
         }
@@ -659,7 +669,7 @@ void Build::ReplaceVars(const std::vector<std::string> &flags, std::string &str)
     ::ReplaceVars(str, "{CFLAGS}", [this, &flags] () {
         auto env = Exec::getenv();
         Sysconfig sysconfig{};
-        Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
+        Buildenv buildenv{sysconfig, cflags, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
         buildenv.FilterEnv(env);
         std::string cflags{};
         for (const auto &pair : env) {
@@ -874,7 +884,7 @@ void Build::Configure() {
     }
     auto env = Exec::getenv();
     Sysconfig sysconfig{};
-    Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags,
+    Buildenv buildenv{sysconfig, cflags, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags,
                       nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
     buildenv.FilterEnv(env);
     std::string sysroot = buildenv.Sysroot();
@@ -1352,7 +1362,7 @@ void Build::Make() {
         } else {
             auto env = Exec::getenv();
             Sysconfig sysconfig{};
-            Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
+            Buildenv buildenv{sysconfig, cflags, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
             buildenv.FilterEnv(env);
             ApplyEnv(buildenv.Sysroot(), env);
             for (const auto &cmd : beforeBuild) {
@@ -1537,7 +1547,7 @@ void Build::Install() {
                 }
                 auto env = Exec::getenv();
                 Sysconfig sysconfig{};
-                Buildenv buildenv{sysconfig, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
+                Buildenv buildenv{sysconfig, cflags, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
                 buildenv.FilterEnv(env);
                 ApplyEnv(buildenv.Sysroot(), env);
                 if (makecmd == "ninja") {
