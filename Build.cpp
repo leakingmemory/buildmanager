@@ -114,7 +114,17 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                             }
                         }
                     }
-                    distfiles.emplace_back(filename, source);
+                    std::string type{};
+                    {
+                        auto iterator = filenameObject.find("type");
+                        if (iterator != filenameObject.end()) {
+                            auto typeObject = *iterator;
+                            if (typeObject.is_string()) {
+                                type = typeObject;
+                            }
+                        }
+                    }
+                    distfiles.emplace_back(filename, type, source);
                     ++iterator;
                 }
             }
@@ -690,6 +700,15 @@ void Build::ReplaceVars(const std::vector<std::string> &flags, std::string &str)
             builddirStr = builddir;
         }
         return builddirStr;
+    });
+    ::ReplaceVars(str, "{DISTFILES}", [this] () {
+        std::string distfilesStr{};
+        {
+            auto ports = port->GetGroup()->GetPortsRoot();
+            auto distfilesPath = ports->GetRoot() / "distfiles";
+            distfilesStr = distfilesPath;
+        }
+        return distfilesStr;
     });
 }
 

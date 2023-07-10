@@ -90,6 +90,13 @@ void Distfile::Extract(const Ports &ports, const path &iBuildDir) const {
             throw DistfileException("Unable to create work directory");
         }
     }
+    if (!type.empty()) {
+        if (type == "raw") {
+            return;
+        } else {
+            throw DistfileException("Unknown format to extract");
+        }
+    }
     if (name.ends_with(".tar.gz")) {
         Fork fork{[filename, buildDir] () {
             {

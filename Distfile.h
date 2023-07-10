@@ -14,11 +14,15 @@ class Ports;
 class Distfile {
 private:
     std::string name;
+    std::string type;
     std::vector<std::string> source;
 public:
-    Distfile(const std::string &name, const std::vector<std::string> &source) : name(name), source(source) {}
+    Distfile(const std::string &name, const std::string &type, const std::vector<std::string> &source) : name(name), type(type), source(source) {}
     [[nodiscard]] std::string GetName() const {
         return name;
+    }
+    [[nodiscard]] std::string GetType() const {
+        return type;
     }
     [[nodiscard]] std::vector<std::string> GetSource() const {
         return source;
