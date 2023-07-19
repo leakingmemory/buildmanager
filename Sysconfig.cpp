@@ -12,6 +12,7 @@ extern "C" {
 #include <grp.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 }
 
 using path = std::filesystem::path;
