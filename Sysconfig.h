@@ -7,6 +7,9 @@
 
 #include <string>
 #include <filesystem>
+extern "C" {
+#include <grp.h>
+};
 
 class Sysconfig {
 private:
