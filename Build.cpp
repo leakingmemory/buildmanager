@@ -885,6 +885,8 @@ void Build::Configure() {
         return;
     }
     auto tooling = GetTooling();
+    Sysconfig sysconfig{};
+    bool chownSourceDirs{true};
     if (tooling == Tooling::CMAKE || tooling == Tooling::MESON) {
         if (!exists(cmakeDir)) {
             if (!create_directory(cmakeDir)) {
@@ -894,6 +896,8 @@ void Build::Configure() {
         if (!is_directory(cmakeDir)) {
             throw BuildException("Cmake directory: Is not a directory");
         }
+        sysconfig.Chown(cmakeDir);
+        chownSourceDirs = false;
     }
     if (tooling == Tooling::BOOTSTRAP) {
         return;
@@ -902,13 +906,15 @@ void Build::Configure() {
         return;
     }
     auto env = Exec::getenv();
-    Sysconfig sysconfig{};
     Buildenv buildenv{sysconfig, cflags, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags,
                       nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
     buildenv.FilterEnv(env);
     std::string sysroot = buildenv.Sysroot();
     ApplyEnv(sysroot, env);
     if (exists(builddir) && is_directory(builddir)) {
+        if (chownSourceDirs) {
+            sysconfig.ChownDirTree(builddir);
+        }
         for (const auto &cmd : beforeConfigure) {
             auto iterator = cmd.begin();
             if (iterator == cmd.end()) {
@@ -921,7 +927,8 @@ void Build::Configure() {
                 args.emplace_back(*iterator);
                 ++iterator;
             }
-            Fork f{[&builddir, &cmdexec, &args, &env] () {
+            Fork f{[&sysconfig, &builddir, &cmdexec, &args, &env] () {
+                sysconfig.SetUserAndGroup();
                 if (chdir(builddir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << builddir << "\n";
                     return 1;
@@ -932,7 +939,8 @@ void Build::Configure() {
             }};
             f.Require();
         }
-        Fork f{[this, &builddir, &cmakeDir, &tooling, staticBuild, &env, &sysroot] () {
+        Fork f{[this, &sysconfig, &builddir, &cmakeDir, &tooling, staticBuild, &env, &sysroot] () {
+            sysconfig.SetUserAndGroup();
             if (tooling == Tooling::CONFIGURE) {
                 if (chdir(builddir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << builddir << "\n";
@@ -1398,7 +1406,8 @@ void Build::Make() {
                     ReplaceVars(flags, arg);
                     ++iterator;
                 }
-                Fork f{[&builddir, &cmdexec, &args, &env] () {
+                Fork f{[&sysconfig, &builddir, &cmdexec, &args, &env] () {
+                    sysconfig.SetUserAndGroup();
                     if (chdir(builddir.c_str()) != 0) {
                         std::cerr << "chdir: build dir: " << builddir << "\n";
                         return 1;
@@ -1409,7 +1418,7 @@ void Build::Make() {
                 }};
                 f.Require();
             }
-            Fork f{[this, builddir, tooling, &env]() {
+            Fork f{[this, &sysconfig, builddir, tooling, &env]() {
                 if (chdir(builddir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << builddir << "\n";
                     return 1;
@@ -1447,6 +1456,7 @@ void Build::Make() {
                     packing.Require();
                     extract.Require();
                 } else if (tooling != Tooling::CUSTOM) {
+                    sysconfig.SetUserAndGroup();
                     std::string makecmd{};
                     if (exists(path("Makefile"))) {
                         makecmd = "make";

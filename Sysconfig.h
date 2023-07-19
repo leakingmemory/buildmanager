@@ -6,6 +6,7 @@
 #define BM_SYSCONFIG_H
 
 #include <string>
+#include <filesystem>
 
 class Sysconfig {
 private:
@@ -14,6 +15,8 @@ private:
     std::string ldflags;
     std::string cc;
     std::string cxx;
+    std::string username;
+    std::string groupname;
 public:
     Sysconfig();
     void AppendCflags(std::string &cflags) const {
@@ -46,6 +49,11 @@ public:
     std::string GetCxx() const {
         return cxx;
     }
+    pid_t GetUid();
+    gid_t GetGid();
+    void Chown(const std::filesystem::path &);
+    void ChownDirTree(const std::filesystem::path &);
+    void SetUserAndGroup();
 };
 
 
