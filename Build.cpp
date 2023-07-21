@@ -79,7 +79,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), chownSrc(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -621,6 +621,23 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                 }
             }
         }
+        {
+            auto iterator = jsonData.find("chownSrc");
+            if (iterator != jsonData.end()) {
+                auto &chownSrc = *iterator;
+                if (chownSrc.is_array()) {
+                    auto iterator = chownSrc.begin();
+                    while (iterator != chownSrc.end()) {
+                        auto &chown = *iterator;
+                        if (chown.is_string()) {
+                            std::string chownFile = chown;
+                            this->chownSrc.emplace_back(chownFile);
+                        }
+                        ++iterator;
+                    }
+                }
+            }
+        }
     } catch (std::exception &e) {
         std::cerr << buildfile << ": json parse: " << e.what() << "\n";
         return;
@@ -914,6 +931,10 @@ void Build::Configure() {
     if (exists(builddir) && is_directory(builddir)) {
         if (chownSourceDirs) {
             sysconfig.ChownDirTree(builddir);
+        }
+        for (const auto &chownFile : chownSrc) {
+            auto chownPath = builddir / chownFile;
+            sysconfig.Chown(chownPath);
         }
         for (const auto &cmd : beforeConfigure) {
             auto iterator = cmd.begin();
