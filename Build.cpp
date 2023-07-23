@@ -948,13 +948,16 @@ void Build::Configure() {
                 args.emplace_back(*iterator);
                 ++iterator;
             }
-            Fork f{[&sysconfig, &builddir, &cmdexec, &args, &env] () {
+            Fork f{[this, &sysconfig, &builddir, &cmdexec, &args, &env] () {
                 sysconfig.SetUserAndGroup();
                 if (chdir(builddir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << builddir << "\n";
                     return 1;
                 }
                 Exec e{cmdexec};
+                for (auto &arg : args) {
+                    ReplaceVars(flags, arg);
+                }
                 e.exec(args, env);
                 return 0;
             }};
