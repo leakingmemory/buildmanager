@@ -79,7 +79,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), chownSrc(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), afterExtract(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), chownSrc(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -273,6 +273,40 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                 }
             } else {
                 installTargets.emplace_back("install");
+            }
+        }
+        {
+            auto iterator = jsonData.find("extract");
+            if (iterator != jsonData.end()) {
+                auto &extract = *iterator;
+                {
+                    auto iterator = extract.find("after");
+                    if (iterator != extract.end()) {
+                        auto &after = *iterator;
+                        if (after.is_array()) {
+                            auto iterator = after.begin();
+                            while (iterator != after.end()) {
+                                auto &cmd = *iterator;
+                                if (cmd.is_array()) {
+                                    std::vector<std::string> argv{};
+                                    auto iterator = cmd.begin();
+                                    while (iterator != cmd.end()) {
+                                        auto c = *iterator;
+                                        if (c.is_string()) {
+                                            std::string cstr = c;
+                                            argv.emplace_back(cstr);
+                                        }
+                                        ++iterator;
+                                    }
+                                    if (!argv.empty()) {
+                                        afterExtract.emplace_back(argv);
+                                    }
+                                }
+                                ++iterator;
+                            }
+                        }
+                    }
+                }
             }
         }
         {
@@ -727,6 +761,35 @@ void Build::ReplaceVars(const std::vector<std::string> &flags, std::string &str)
         }
         return distfilesStr;
     });
+    ::ReplaceVars(str, "{USER}", [this] () {
+        Sysconfig sysconfig{};
+        auto euser = geteuid();
+        auto user = euser;
+        if (user == 0) {
+            user = sysconfig.GetUid();
+            if (user == 0) {
+                user = euser;
+            }
+        }
+        std::stringstream str{};
+        str << std::dec << user;
+        return str.str();
+    });
+    ::ReplaceVars(str, "{GROUP}", [this] () {
+        Sysconfig sysconfig{};
+        gid_t group;
+        if (geteuid() == 0) {
+            group = sysconfig.GetGid();
+            if (group == 0) {
+                group = getegid();
+            }
+        } else {
+            group = getegid();
+        }
+        std::stringstream str{};
+        str << std::dec << group;
+        return str.str();
+    });
 }
 
 void Build::ApplyEnv(const std::string &sysroot, std::map<std::string,std::string> &env) {
@@ -823,6 +886,37 @@ void Build::Extract() {
             patcher.CloseInput();
             patcher.Require();
         }
+    }
+    auto env = Exec::getenv();
+    for (const auto &cmd : afterExtract) {
+        auto iterator = cmd.begin();
+        if (iterator == cmd.end()) {
+            continue;
+        }
+        auto cmdexec = *iterator;
+        ++iterator;
+        std::vector<std::string> args{};
+        while (iterator != cmd.end()) {
+            args.emplace_back(*iterator);
+            ++iterator;
+        }
+        Fork f{[this, &workdir, &cmdexec, &args, &env] () {
+            std::string workdirStr = workdir;
+            if (chdir(workdirStr.c_str()) != 0) {
+                std::cerr << "chdir: work dir: " << workdirStr << "\n";
+                return 1;
+            }
+            Exec e{cmdexec};
+            std::cout << "\"" << cmdexec << "\"";
+            for (auto &arg : args) {
+                ReplaceVars(flags, arg);
+                std::cout << " \"" << arg << "\"";
+            }
+            std::cout << "\n";
+            e.exec(args, env);
+            return 0;
+        }};
+        f.Require();
     }
 }
 

@@ -44,6 +44,7 @@ class Build {
     std::string nobootstrapLdflags;
     std::vector<std::string> buildTargets;
     std::vector<std::string> installTargets;
+    std::vector<std::vector<std::string>> afterExtract;
     std::vector<std::vector<std::string>> beforeConfigure;
     std::vector<std::vector<std::string>> beforeBuild;
     std::vector<std::vector<std::string>> postInstall;
@@ -64,7 +65,7 @@ class Build {
     /* dynamic/user provided: */
     std::vector<std::string> flags;
 public:
-    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), nosysrootEnv(), installTargets(), patches(), chownSrc(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false), flags() {}
+    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), afterExtract(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), nosysrootEnv(), installTargets(), patches(), chownSrc(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false), flags() {}
     Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags);
 private:
     void ReplaceVars(const std::vector<std::string> &flags, std::string &str) const;
