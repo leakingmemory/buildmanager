@@ -21,7 +21,9 @@ enum class Command {
     BUILD,
     INSTALL,
     PACKAGE,
-    UNPACK
+    UNPACK,
+    REBOOTSTRAP,
+    BOOTSTRAPSHELL
 };
 
 static int ListGroups(Ports &ports) {
@@ -125,6 +127,26 @@ static int Package(Ports &ports, const std::string &buildName) {
     }
 }
 
+static int BootstrapShell(Ports &ports, const std::string &buildName) {
+    Build build = GetBuild(ports, buildName, {});
+    if (build.IsValid()) {
+        build.BootstrapShell();
+        return 0;
+    } else {
+        return 2;
+    }
+}
+
+static int Rebootstrap(Ports &ports, const std::string &buildName) {
+    Build build = GetBuild(ports, buildName, {});
+    if (build.IsValid()) {
+        build.ReBootstrap();
+        return 0;
+    } else {
+        return 2;
+    }
+}
+
 static int Unpack(const std::string &filename, const std::string &targetDir) {
     class Unpack unpack{filename, targetDir};
     return 0;
@@ -136,7 +158,8 @@ int usage(const std::string &cmd) {
             << " " << cmd << " clean <group/port/build>\n" << cmd << " fetch <group/port/build>\n"
             << " " << cmd << " extract <group/port/build>\n " << cmd << " configure <group/port/build>\n"
             << " " << cmd << " build <group/port/build>\n " << cmd << " install <group/port/build>\n"
-            << " " << cmd << " package <group/port/build>\n " << cmd << " unpack <file> <target-dir>\n";
+            << " " << cmd << " package <group/port/build>\n " << cmd << " unpack <file> <target-dir>\n"
+            << " " << cmd << " rebootstrap <group/port/build>\n " << cmd << " bootstrapshell <group/port/build>\n";
     return 1;
 }
 
@@ -303,6 +326,36 @@ static int RunCmd(const std::string &cmdExec, Ports &ports, Command cmd, std::ve
             }
             return Unpack(filename, targetDir);
         }
+        case Command::REBOOTSTRAP: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage(cmdExec);
+                }
+            }
+            return Rebootstrap(ports, buildName);
+        }
+        case Command::BOOTSTRAPSHELL: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage(cmdExec);
+                }
+            }
+            return BootstrapShell(ports, buildName);
+        }
         case Command::NONE:
             break;
     }
@@ -322,6 +375,8 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("install", Command::INSTALL);
     cmdMap.insert_or_assign("package", Command::PACKAGE);
     cmdMap.insert_or_assign("unpack", Command::UNPACK);
+    cmdMap.insert_or_assign("rebootstrap", Command::REBOOTSTRAP);
+    cmdMap.insert_or_assign("bootstrapshell", Command::BOOTSTRAPSHELL);
     return cmdMap;
 }
 

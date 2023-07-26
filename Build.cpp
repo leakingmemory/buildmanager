@@ -19,6 +19,7 @@
 #include <sstream>
 extern "C" {
 #include <unistd.h>
+#include <sys/mount.h>
 }
 
 Build GetBuild(Ports &ports, const std::string &buildName, const std::vector<std::string> &flags) {
@@ -79,7 +80,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), afterExtract(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), chownSrc(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), bootstrapRebuild(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), afterExtract(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), chownSrc(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -203,6 +204,23 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                         if (bootstrapElement.is_string()) {
                             std::string bootstrap = bootstrapElement;
                             this->bootstrap.emplace_back(bootstrap);
+                        }
+                        ++iterator;
+                    }
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("rebuild");
+            if (iterator != jsonData.end()) {
+                auto &rebuildItem = *iterator;
+                if (rebuildItem.is_array()) {
+                    auto iterator = rebuildItem.begin();
+                    while (iterator != rebuildItem.end()) {
+                        auto rebuildBootstrap = *iterator;
+                        if (rebuildBootstrap.is_string()) {
+                            std::string bootstrap = rebuildBootstrap;
+                            this->bootstrapRebuild.emplace_back(bootstrap);
                         }
                         ++iterator;
                     }
@@ -1481,6 +1499,156 @@ void Build::MakeBootstrap() {
         std::cout << "==> Bootstrap build complete\n";
         Exec::setenv(originalEnv);
     }
+}
+
+class Mount {
+private:
+    std::string target;
+public:
+    Mount(const std::string &source, const std::string &target, const std::string &filesystemtype, unsigned long mountflags, const void *data);
+    ~Mount();
+    Mount(const Mount &) = delete;
+    Mount(Mount &&) = delete;
+    Mount &operator=(const Mount &) = delete;
+    Mount &operator=(Mount &&) = delete;
+};
+
+Mount::Mount(const std::string &source, const std::string &target, const std::string &filesystemtype,
+             unsigned long mountflags, const void *data) : target(target){
+    if (mount(source.c_str(), target.c_str(), filesystemtype.c_str(), mountflags, data) != 0) {
+        std::cerr << "error: failed to mount " << target << "\n";
+        throw new BuildException("Mount failed");
+    }
+}
+
+Mount::~Mount() {
+    if (umount(target.c_str()) != 0) {
+        std::cerr << "error: failed to unmount " << target << "\n";
+    }
+}
+
+void Build::BootstrapShell() {
+    path workdir = port->GetRoot() / "work";
+    path builddir = workdir / this->builddir / "bootstrap";
+    auto tooling = GetTooling();
+    if (tooling != Tooling::BOOTSTRAP) {
+        std::cerr << "Error: This is not a bootstrap build\n";
+        return;
+    }
+    if (!exists(builddir) || !is_directory(builddir)) {
+        std::cerr << "Error: Can't rebootstrap, not bootstrapped\n";
+        return;
+    }
+    if (geteuid() != 0) {
+        std::cerr << "Error: Rebootstrap unfortunately requires root\n";
+        return;
+    }
+    path tmpdir = builddir / "tmp";
+    path devdir = builddir / "dev";
+    path sysdir = builddir / "sys";
+    path procdir = builddir / "proc";
+    if (!exists(tmpdir) || !exists(devdir) || !exists(sysdir) || !exists(procdir) ||
+        !is_directory(tmpdir) || !is_directory(devdir) || !is_directory(sysdir) ||
+        !is_directory(procdir)) {
+        std::cerr << "Error: Check tmp,dev,sys,proc directories in bootstrap\n";
+        return;
+    }
+    Mount tmpmount("none", tmpdir, "tmpfs", 0, nullptr);
+    Mount devmount("/dev", devdir, "", MS_BIND, nullptr);
+    Mount sysmount("/sys", sysdir, "", MS_BIND, nullptr);
+    Mount procmount("/proc", procdir, "", MS_BIND, nullptr);
+    Fork rebootstrap{[&builddir] () {
+        std::string builddirStr = builddir;
+        if (chdir(builddirStr.c_str()) != 0) {
+            std::cerr << "chdir: build dir: " << builddirStr << "\n";
+            return 1;
+        }
+        chroot(builddirStr.c_str());
+        Exec shell{"/bin/bash"};
+        shell.exec({}, Exec::getenv());
+        return 0;
+    }};
+    rebootstrap.Require();
+}
+
+void Build::ReBootstrap() {
+    auto ports = Ports::Create(port->GetGroup()->GetPortsRoot()->GetRoot().c_str());
+    path workdir = port->GetRoot() / "work";
+    path builddir = workdir / this->builddir / "bootstrap";
+    auto tooling = GetTooling();
+    if (tooling != Tooling::BOOTSTRAP) {
+        std::cerr << "Error: This is not a bootstrap build\n";
+        return;
+    }
+    if (!exists(builddir) || !is_directory(builddir)) {
+        std::cerr << "Error: Can't rebootstrap, not bootstrapped\n";
+        return;
+    }
+    if (geteuid() != 0) {
+        std::cerr << "Error: Rebootstrap unfortunately requires root\n";
+        return;
+    }
+    std::vector<Build> bootstrapRebuilds{};
+    for (const auto &bootstrapName : this->bootstrapRebuild) {
+        auto build = GetBuild(*ports, bootstrapName, {});
+        if (!build.IsValid()) {
+            std::cerr << "Build " << bootstrapName << " not found.\n";
+            throw BuildException("Build not found");
+        }
+        bootstrapRebuilds.emplace_back(build);
+    }
+    path tmpdir = builddir / "tmp";
+    path devdir = builddir / "dev";
+    path sysdir = builddir / "sys";
+    path procdir = builddir / "proc";
+    if (!exists(tmpdir) || !exists(devdir) || !exists(sysdir) || !exists(procdir) ||
+        !is_directory(tmpdir) || !is_directory(devdir) || !is_directory(sysdir) ||
+        !is_directory(procdir)) {
+        std::cerr << "Error: Check tmp,dev,sys,proc directories in bootstrap\n";
+        return;
+    }
+    Mount tmpmount("none", tmpdir, "tmpfs", 0, nullptr);
+    Mount devmount("/dev", devdir, "", MS_BIND, nullptr);
+    Mount sysmount("/sys", sysdir, "", MS_BIND, nullptr);
+    Mount procmount("/proc", procdir, "", MS_BIND, nullptr);
+    Fork rebootstrap{[&builddir, &bootstrapRebuilds] () {
+        std::string builddirStr = builddir;
+        std::string pkgDir;
+        {
+            auto pkgDirPath = builddir / "native";
+            if (!exists(pkgDirPath)) {
+                if (!create_directory(pkgDirPath)) {
+                    throw BuildException("Failed to create directory for built pkgs");
+                }
+            }
+            pkgDir = pkgDirPath;
+        }
+        if (chdir(pkgDir.c_str()) != 0) {
+            std::cerr << "chdir: build dir: " << pkgDir << "\n";
+            return 1;
+        }
+        chroot(builddirStr.c_str());
+        for (auto &build : bootstrapRebuilds) {
+            build.Clean();
+        }
+        for (auto &build : bootstrapRebuilds) {
+            build.Package();
+            build.Clean();
+            path native = "/";
+            native = native / "native";
+            if (exists(native)) {
+                std::string pkg{build.GetName()};
+                pkg.append("-");
+                pkg.append(build.GetVersion());
+                pkg.append(".pkg");
+                Unpack unpack{pkg, ".."};
+            } else {
+                throw BuildException("Unexpected directory struct, something is wrong");
+            }
+        }
+        return 0;
+    }};
+    rebootstrap.Require();
 }
 
 void Build::Make() {

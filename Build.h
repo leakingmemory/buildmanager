@@ -33,6 +33,7 @@ class Build {
     std::string libcppHeaderBuild;
     std::vector<std::string> bootstrap;
     std::vector<std::string> staticBootstrap;
+    std::vector<std::string> bootstrapRebuild;
     /* normal: */
     std::string cflags;
     std::string cxxflags;
@@ -65,7 +66,7 @@ class Build {
     /* dynamic/user provided: */
     std::vector<std::string> flags;
 public:
-    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), afterExtract(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), nosysrootEnv(), installTargets(), patches(), chownSrc(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false), flags() {}
+    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), bootstrapRebuild(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), afterExtract(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), nosysrootEnv(), installTargets(), patches(), chownSrc(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false), flags() {}
     Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags);
 private:
     void ReplaceVars(const std::vector<std::string> &flags, std::string &str) const;
@@ -86,6 +87,8 @@ public:
     void Clean();
     void Configure();
     void MakeBootstrap();
+    void BootstrapShell();
+    void ReBootstrap();
     void Make();
     void Install();
     void Package();
