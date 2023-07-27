@@ -16,10 +16,11 @@
 #include "Unpack.h"
 #include "sha2alg.h"
 #include "FindLib.h"
+#include "Mount.h"
+#include "Chroot.h"
 #include <sstream>
 extern "C" {
 #include <unistd.h>
-#include <sys/mount.h>
 }
 
 Build GetBuild(Ports &ports, const std::string &buildName, const std::vector<std::string> &flags) {
@@ -221,6 +222,23 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                         if (rebuildBootstrap.is_string()) {
                             std::string bootstrap = rebuildBootstrap;
                             this->bootstrapRebuild.emplace_back(bootstrap);
+                        }
+                        ++iterator;
+                    }
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("installBootstrap");
+            if (iterator != jsonData.end()) {
+                auto &installItem = *iterator;
+                if (installItem.is_array()) {
+                    auto iterator = installItem.begin();
+                    while (iterator != installItem.end()) {
+                        auto installBootstrapItem = *iterator;
+                        if (installBootstrapItem.is_string()) {
+                            std::string bootstrap = installBootstrapItem;
+                            this->bootstrapInstall.emplace_back(bootstrap);
                         }
                         ++iterator;
                     }
@@ -1501,32 +1519,6 @@ void Build::MakeBootstrap() {
     }
 }
 
-class Mount {
-private:
-    std::string target;
-public:
-    Mount(const std::string &source, const std::string &target, const std::string &filesystemtype, unsigned long mountflags, const void *data);
-    ~Mount();
-    Mount(const Mount &) = delete;
-    Mount(Mount &&) = delete;
-    Mount &operator=(const Mount &) = delete;
-    Mount &operator=(Mount &&) = delete;
-};
-
-Mount::Mount(const std::string &source, const std::string &target, const std::string &filesystemtype,
-             unsigned long mountflags, const void *data) : target(target){
-    if (mount(source.c_str(), target.c_str(), filesystemtype.c_str(), mountflags, data) != 0) {
-        std::cerr << "error: failed to mount " << target << "\n";
-        throw new BuildException("Mount failed");
-    }
-}
-
-Mount::~Mount() {
-    if (umount(target.c_str()) != 0) {
-        std::cerr << "error: failed to unmount " << target << "\n";
-    }
-}
-
 void Build::BootstrapShell() {
     path workdir = port->GetRoot() / "work";
     path builddir = workdir / this->builddir / "bootstrap";
@@ -1543,32 +1535,10 @@ void Build::BootstrapShell() {
         std::cerr << "Error: Rebootstrap unfortunately requires root\n";
         return;
     }
-    path tmpdir = builddir / "tmp";
-    path devdir = builddir / "dev";
-    path sysdir = builddir / "sys";
-    path procdir = builddir / "proc";
-    if (!exists(tmpdir) || !exists(devdir) || !exists(sysdir) || !exists(procdir) ||
-        !is_directory(tmpdir) || !is_directory(devdir) || !is_directory(sysdir) ||
-        !is_directory(procdir)) {
-        std::cerr << "Error: Check tmp,dev,sys,proc directories in bootstrap\n";
-        return;
-    }
-    Mount tmpmount("none", tmpdir, "tmpfs", 0, nullptr);
-    Mount devmount("/dev", devdir, "", MS_BIND, nullptr);
-    Mount sysmount("/sys", sysdir, "", MS_BIND, nullptr);
-    Mount procmount("/proc", procdir, "", MS_BIND, nullptr);
-    Fork rebootstrap{[&builddir] () {
-        std::string builddirStr = builddir;
-        if (chdir(builddirStr.c_str()) != 0) {
-            std::cerr << "chdir: build dir: " << builddirStr << "\n";
-            return 1;
-        }
-        chroot(builddirStr.c_str());
+    Chroot chroot(builddir, [] () {
         Exec shell{"/bin/bash"};
         shell.exec({}, Exec::getenv());
-        return 0;
-    }};
-    rebootstrap.Require();
+    });
 }
 
 void Build::ReBootstrap() {
@@ -1798,8 +1768,8 @@ void Build::Install() {
         throw BuildException("Installdir is not a directory");
     }
     if (exists(builddir) && is_directory(builddir)) {
-        if (tooling == Tooling::STATIC_FILES || tooling == Tooling::BOOTSTRAP) {
-            Fork extract([&installdir] () {
+        if (tooling == Tooling::STATIC_FILES) {
+            Fork extract([&installdir]() {
                 if (chdir(installdir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << installdir << "\n";
                     return 1;
@@ -1810,7 +1780,7 @@ void Build::Install() {
                 exec.exec(args, Exec::getenv());
                 return 0;
             }, ForkInputOutput::INPUT);
-            Fork packing{[&builddir] () {
+            Fork packing{[&builddir]() {
                 if (chdir(builddir.c_str()) != 0) {
                     std::cerr << "chdir: build dir: " << builddir << "\n";
                     return 1;
@@ -1822,7 +1792,7 @@ void Build::Install() {
                 return 0;
             }, ForkInputOutput::INPUTOUTPUT};
             std::string list = FileListString(ListFiles(builddir));
-            Fork submit{[&packing, &list] () {
+            Fork submit{[&packing, &list]() {
                 packing << list;
                 packing.CloseInput();
                 return 0;
@@ -1833,6 +1803,28 @@ void Build::Install() {
             submit.Require();
             packing.Require();
             extract.Require();
+        } else if (tooling == Tooling::BOOTSTRAP) {
+            auto ports = Ports::Create(port->GetGroup()->GetPortsRoot()->GetRoot().c_str());
+            std::vector<Build> bootstrapInstalls{};
+            for (const auto &bootstrapName : this->bootstrapInstall) {
+                auto build = GetBuild(*ports, bootstrapName, {});
+                if (!build.IsValid()) {
+                    std::cerr << "Build " << bootstrapName << " not found.\n";
+                    throw BuildException("Build not found");
+                }
+                bootstrapInstalls.emplace_back(build);
+            }
+            auto pkgdir = builddir / "native";
+            if (!exists(pkgdir)) {
+                throw BuildException("Pkgdir not found for bootstrap, run build or rebootstrap");
+            }
+            for (const auto &build : bootstrapInstalls) {
+                std::string pkg{build.GetName()};
+                pkg.append("-");
+                pkg.append(build.GetVersion());
+                pkg.append(".pkg");
+                Unpack unpack{pkgdir / pkg, installdir};
+            }
         } else if (tooling != Tooling::CUSTOM) {
             Fork f{[this, builddir, installdir]() {
                 if (chdir(builddir.c_str()) != 0) {

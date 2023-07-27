@@ -6,6 +6,8 @@
 #include "Port.h"
 #include "Build.h"
 #include "Unpack.h"
+#include "Chroot.h"
+#include "Exec.h"
 
 const char *portdir = "/var/ports";
 
@@ -23,7 +25,8 @@ enum class Command {
     PACKAGE,
     UNPACK,
     REBOOTSTRAP,
-    BOOTSTRAPSHELL
+    BOOTSTRAPSHELL,
+    CHROOT
 };
 
 static int ListGroups(Ports &ports) {
@@ -147,6 +150,14 @@ static int Rebootstrap(Ports &ports, const std::string &buildName) {
     }
 }
 
+static int Chroot(const std::string &dir) {
+    class Chroot chroot{dir, [] () {
+        Exec exec{"/bin/bash"};
+        exec.exec({}, Exec::getenv());
+    }};
+    return 0;
+}
+
 static int Unpack(const std::string &filename, const std::string &targetDir) {
     class Unpack unpack{filename, targetDir};
     return 0;
@@ -159,7 +170,8 @@ int usage(const std::string &cmd) {
             << " " << cmd << " extract <group/port/build>\n " << cmd << " configure <group/port/build>\n"
             << " " << cmd << " build <group/port/build>\n " << cmd << " install <group/port/build>\n"
             << " " << cmd << " package <group/port/build>\n " << cmd << " unpack <file> <target-dir>\n"
-            << " " << cmd << " rebootstrap <group/port/build>\n " << cmd << " bootstrapshell <group/port/build>\n";
+            << " " << cmd << " rebootstrap <group/port/build>\n " << cmd << " bootstrapshell <group/port/build>\n"
+            << " " << cmd << " chroot <dir>\n";
     return 1;
 }
 
@@ -356,6 +368,21 @@ static int RunCmd(const std::string &cmdExec, Ports &ports, Command cmd, std::ve
             }
             return BootstrapShell(ports, buildName);
         }
+        case Command::CHROOT: {
+            std::string dir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                dir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage(cmdExec);
+                }
+            }
+            return Chroot(dir);
+        }
         case Command::NONE:
             break;
     }
@@ -377,6 +404,7 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("unpack", Command::UNPACK);
     cmdMap.insert_or_assign("rebootstrap", Command::REBOOTSTRAP);
     cmdMap.insert_or_assign("bootstrapshell", Command::BOOTSTRAPSHELL);
+    cmdMap.insert_or_assign("chroot", Command::CHROOT);
     return cmdMap;
 }
 
