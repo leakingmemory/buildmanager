@@ -53,6 +53,8 @@ class Build {
     std::vector<std::string> configureParams;
     std::vector<std::string> staticConfigureParams;
     std::vector<std::string> sysrootConfigureParams;
+    std::vector<std::string> bdep;
+    std::vector<std::string> rdep;
     std::map<std::string,std::string> sysrootEnv;
     std::map<std::string,std::string> nosysrootEnv;
     std::vector<std::string> patches;
@@ -67,7 +69,7 @@ class Build {
     /* dynamic/user provided: */
     std::vector<std::string> flags;
 public:
-    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), bootstrapRebuild(), bootstrapInstall(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), afterExtract(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), nosysrootEnv(), installTargets(), patches(), chownSrc(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false), flags() {}
+    Build() : port(), buildfile(), version(), distfiles(), builddir(), prefix(), tooling(), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), bootstrapRebuild(), bootstrapInstall(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), afterExtract(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), bdep(), rdep(), sysrootEnv(), nosysrootEnv(), installTargets(), patches(), chownSrc(), configureSkip(false), configureStaticOverrides(false), requiresClang(false), valid(false), flags() {}
     Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags);
 private:
     void ReplaceVars(const std::vector<std::string> &flags, std::string &str) const;

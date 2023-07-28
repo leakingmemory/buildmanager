@@ -18,6 +18,7 @@
 #include "FindLib.h"
 #include "Mount.h"
 #include "Chroot.h"
+#include "PkgHdr.h"
 #include <sstream>
 extern "C" {
 #include <unistd.h>
@@ -81,7 +82,7 @@ public:
     }
 };
 
-Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), bootstrapRebuild(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), afterExtract(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), sysrootEnv(), patches(), chownSrc(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
+Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std::vector<std::string> &flags) : port(port), buildfile(buildfile), version(), distfiles(), prefix("/usr"), tooling("configure"), libc(), libcpp(), libcppHeaderBuild(), bootstrap(), staticBootstrap(), bootstrapRebuild(), cflags(), cxxflags(), ldflags(), sysrootCxxflags(), sysrootLdflags(), sysrootCmake(), nosysrootLdflags(), nobootstrapLdflags(), buildTargets(), installTargets(), afterExtract(), beforeConfigure(), beforeBuild(), postInstall(), configureParams(), staticConfigureParams(), sysrootConfigureParams(), bdep(), rdep(), sysrootEnv(), patches(), chownSrc(), configureSkip(false), configureDefaultParameters(true), configureStaticOverrides(false), configureSysrootOverrides(false), requiresClang(false), valid(false), flags(flags) {
     std::string filename{buildfile.filename()};
     std::string portName{port->GetName()};
     const std::string end{".build"};
@@ -702,6 +703,40 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                         if (chown.is_string()) {
                             std::string chownFile = chown;
                             this->chownSrc.emplace_back(chownFile);
+                        }
+                        ++iterator;
+                    }
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("bdep");
+            if (iterator != jsonData.end()) {
+                auto &deps = *iterator;
+                if (deps.is_array()) {
+                    auto iterator = deps.begin();
+                    while (iterator != deps.end()) {
+                        auto &dep = *iterator;
+                        if (dep.is_string()) {
+                            std::string depStr = dep;
+                            this->bdep.emplace_back(depStr);
+                        }
+                        ++iterator;
+                    }
+                }
+            }
+        }
+        {
+            auto iterator = jsonData.find("rdep");
+            if (iterator != jsonData.end()) {
+                auto &deps = *iterator;
+                if (deps.is_array()) {
+                    auto iterator = deps.begin();
+                    while (iterator != deps.end()) {
+                        auto &dep = *iterator;
+                        if (dep.is_string()) {
+                            std::string depStr = dep;
+                            this->rdep.emplace_back(depStr);
                         }
                         ++iterator;
                     }
@@ -1924,6 +1959,17 @@ void Build::Install() {
 void Build::Package() {
     Install();
     std::cout << "==> Packaging " << GetName() << "-" << GetVersion() << "\n";
+    nlohmann::json pkgData{};
+    pkgData.emplace("group", port->GetGroup()->GetName());
+    pkgData.emplace("name", GetName());
+    pkgData.emplace("version", GetVersion());
+    {
+        auto jsonArray = nlohmann::json::array();
+        for (const auto &dep : rdep) {
+            jsonArray.push_back(dep);
+        }
+        pkgData.emplace("rdep", jsonArray);
+    }
     path installdir = port->GetRoot() / "work" / "install";
     if (!exists(installdir) || !is_directory(installdir)) {
         throw BuildException("Install dir not found");
@@ -1995,8 +2041,14 @@ void Build::Package() {
     if (!outputStream.is_open()) {
         throw BuildException("Failed to open package file for writing");
     }
-    uint32_t fileListLen = filesWHash.size();
-    outputStream.write((const char *) &fileListLen, sizeof(fileListLen));
-    outputStream.write(filesWHash.c_str(), fileListLen);
+    std::string pkgJson = pkgData.dump();
+    PkgHdr pkgHdr{
+        .magic = PKG_MAGIC,
+        .jsonLength = (uint32_t) pkgJson.size(),
+        .listLength = (uint32_t) filesWHash.size()
+    };
+    outputStream.write((const char *) &pkgHdr, sizeof(pkgHdr));
+    outputStream.write(pkgJson.c_str(), pkgHdr.jsonLength);
+    outputStream.write(filesWHash.c_str(), pkgHdr.listLength);
     fork >> outputStream;
 }

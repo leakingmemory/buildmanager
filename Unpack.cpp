@@ -3,12 +3,14 @@
 //
 
 #include "Unpack.h"
+#include "PkgHdr.h"
+#include "Exec.h"
+#include <fstream>
 #include <iostream>
+#include <nlohmann/json.hpp>
 extern "C" {
 #include <unistd.h>
 }
-#include "Exec.h"
-#include <fstream>
 
 class UnpackException : public std::exception {
 private:
@@ -44,6 +46,25 @@ Unpack::Unpack(std::string path, std::string destdir) : Fork([destdir] () {
     if (!inputStream) {
         throw UnpackException("Expected package to start with package list size");
     }
+    std::string pkginfo{"{}"};
+    if (fileListLen == PKG_MAGIC) {
+        PkgHdr hdr{};
+        hdr.magic = fileListLen;
+        inputStream.read((char *) &(hdr.jsonLength), sizeof(hdr) - sizeof(fileListLen));
+        if (!inputStream) {
+            throw UnpackException("Expected package to start with package header");
+        }
+        fileListLen = hdr.listLength;
+        char *buf = (char *) malloc(hdr.jsonLength);
+        inputStream.read(buf, hdr.jsonLength);
+        if (!inputStream) {
+            free(buf);
+            throw UnpackException("Truncated pkg info");
+        }
+        pkginfo = "";
+        pkginfo.append(buf, hdr.jsonLength);
+        free(buf);
+    }
     {
         char *buf = (char *) malloc(fileListLen);
         inputStream.read(buf, fileListLen);
@@ -53,6 +74,29 @@ Unpack::Unpack(std::string path, std::string destdir) : Fork([destdir] () {
         }
         fileList.append(buf, fileListLen);
         free(buf);
+    }
+    nlohmann::json pkgData{};
+    pkgData = nlohmann::json::parse(pkginfo);
+    {
+        auto iterator = pkgData.find("group");
+        if (iterator != pkgData.end() && iterator->is_string()) {
+            group = *iterator;
+            std::cout << "Group: " << group << "\n";
+        }
+    }
+    {
+        auto iterator = pkgData.find("name");
+        if (iterator != pkgData.end() && iterator->is_string()) {
+            name = *iterator;
+            std::cout << "Name: " << name << "\n";
+        }
+    }
+    {
+        auto iterator = pkgData.find("version");
+        if (iterator != pkgData.end() && iterator->is_string()) {
+            version = *iterator;
+            std::cout << "Version: " << version << "\n";
+        }
     }
     *this << inputStream;
     CloseInput();

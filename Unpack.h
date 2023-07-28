@@ -10,6 +10,9 @@
 class Unpack : private Fork {
 private:
     std::string fileList;
+    std::string group;
+    std::string name;
+    std::string version;
 public:
     Unpack(std::string path, std::string destdir);
 };
