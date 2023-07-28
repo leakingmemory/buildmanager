@@ -6,14 +6,19 @@
 #define BM_UNPACK_H
 
 #include "Fork.h"
+#include <fstream>
 
-class Unpack : private Fork {
+class Unpack  {
 private:
+    Fork fork;
+    std::fstream inputStream;
     std::string fileList;
     std::string group;
     std::string name;
     std::string version;
+    std::vector<std::string> rdep;
 public:
+    Unpack(std::string path);
     Unpack(std::string path, std::string destdir);
 };
 

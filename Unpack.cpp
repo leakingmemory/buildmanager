@@ -5,7 +5,6 @@
 #include "Unpack.h"
 #include "PkgHdr.h"
 #include "Exec.h"
-#include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
 extern "C" {
@@ -22,21 +21,7 @@ public:
     }
 };
 
-Unpack::Unpack(std::string path, std::string destdir) : Fork([destdir] () {
-    if (chdir(destdir.c_str()) != 0) {
-        std::cerr << "chdir: build dir: " << destdir << "\n";
-        return 1;
-    }
-    Exec exec{"cpio"};
-    std::vector<std::string> args{};
-    args.emplace_back("--extract");
-    args.emplace_back("-u");
-    auto env = Exec::getenv();
-    exec.exec(args, env);
-    return 0;
-}, ForkInputOutput::INPUT), fileList() {
-    std::cout << "==> Unpacking " << path << " into " << destdir << "\n";
-    std::fstream inputStream{};
+Unpack::Unpack(std::string path) : fork() {
     inputStream.open(path, std::ios_base::in | std::ios_base::binary);
     if (!inputStream.is_open()) {
         throw UnpackException("Failed to open input file");
@@ -98,7 +83,37 @@ Unpack::Unpack(std::string path, std::string destdir) : Fork([destdir] () {
             std::cout << "Version: " << version << "\n";
         }
     }
-    *this << inputStream;
-    CloseInput();
-    Require();
+    {
+        auto iterator = pkgData.find("rdep");
+        if (iterator != pkgData.end() && iterator->is_array()) {
+            auto jsonArray = *iterator;
+            auto iterator = jsonArray.begin();
+            while (iterator != jsonArray.end()) {
+                if (iterator->is_string()) {
+                    rdep.push_back(*iterator);
+                }
+                ++iterator;
+            }
+        }
+    }
+}
+
+Unpack::Unpack(std::string path, std::string destdir) : Unpack(path) {
+    std::cout << "==> Unpacking " << path << " into " << destdir << "\n";
+    fork = {[destdir] () {
+        if (chdir(destdir.c_str()) != 0) {
+            std::cerr << "chdir: build dir: " << destdir << "\n";
+            return 1;
+        }
+        Exec exec{"cpio"};
+        std::vector<std::string> args{};
+        args.emplace_back("--extract");
+        args.emplace_back("-u");
+        auto env = Exec::getenv();
+        exec.exec(args, env);
+        return 0;
+    }, ForkInputOutput::INPUT};
+    fork << inputStream;
+    fork.CloseInput();
+    fork.Require();
 }

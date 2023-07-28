@@ -19,6 +19,9 @@ public:
     }
 };
 
+Fork::Fork() : pid(0), stdinpipe(-1), stdoutpipe(-1), result(0), waited(true) {
+}
+
 Fork::Fork(const std::function<int()> &func, ForkInputOutput forkInputOutput) : stdinpipe(-1), stdoutpipe(-1), result(0), waited(false) {
     int inpipefds[2];
     int outpipefds[2];
@@ -83,6 +86,41 @@ Fork::Fork(const std::function<int()> &func, ForkInputOutput forkInputOutput) : 
         }
     }
     this->pid = pid;
+}
+
+Fork::Fork(Fork &&mv) :
+    pid(mv.pid),
+    stdinpipe(mv.stdinpipe),
+    stdoutpipe(mv.stdoutpipe),
+    result(mv.result),
+    waited(mv.waited)
+{
+    mv.stdinpipe = -1;
+    mv.stdoutpipe = -1;
+    mv.waited = true;
+}
+
+Fork &Fork::operator=(Fork &&mv) {
+    Fork sw{std::move(mv)};
+    Swap(sw);
+}
+
+void Fork::Swap(Fork &other) {
+    auto pid = other.pid;
+    auto stdinpipe = other.stdinpipe;
+    auto stdoutpipe = other.stdoutpipe;
+    auto result = other.result;
+    auto waited = other.waited;
+    other.pid = this->pid;
+    other.stdinpipe = this->stdinpipe;
+    other.stdoutpipe = this->stdoutpipe;
+    other.result = this->result;
+    other.waited = this->waited;
+    this->pid = pid;
+    this->stdinpipe = stdinpipe;
+    this->stdoutpipe = stdoutpipe;
+    this->result = result;
+    this->waited = waited;
 }
 
 ssize_t Fork::Read(void *buf, size_t count) const {

@@ -26,7 +26,13 @@ private:
     int result;
     bool waited;
 public:
+    Fork();
     Fork(const std::function<int ()> &func, ForkInputOutput inputOutput = ForkInputOutput::NONE);
+    Fork(const Fork &) = delete;
+    Fork(Fork &&);
+    Fork &operator =(const Fork &) = delete;
+    Fork &operator =(Fork &&);
+    void Swap(Fork &other);
     ssize_t Read(void *buf, size_t count) const;
     ssize_t Write(const void *buf, size_t count) const;
     void CloseInput();
