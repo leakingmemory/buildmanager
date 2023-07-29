@@ -28,6 +28,7 @@ enum class Command {
     UNPACK,
     REGISTER,
     FIND,
+    VERIFY,
     REBOOTSTRAP,
     BOOTSTRAPSHELL,
     CHROOT
@@ -189,6 +190,33 @@ static int Find(const std::string &port, const std::string &rootDir) {
     return 0;
 }
 
+static int Verify(const std::string &port, const std::string &rootDir) {
+    Db db{rootDir};
+    try {
+        auto installedPort = db.Find(port);
+        installedPort.Verify(rootDir, [] (auto path, auto result) {
+            switch (result) {
+                case FileMatch::OK:
+                    //std::cout << "Matching: " << path << "\n";
+                    break;
+                case FileMatch::NOT_MATCHING:
+                    std::cout << "Modified: " << path << "\n";
+                    break;
+                case FileMatch::NOT_FOUND:
+                    std::cout << "Not found: " << path << "\n";
+                    break;
+            }
+        });
+    } catch (const PkgAmbiguous &amb) {
+        std::cout << "Ambiguous: " << amb.what() << "\n";
+        return 1;
+    } catch (const PkgNotFound &notFound) {
+        std::cout << "Not found: " << notFound.what() << "\n";
+        return 1;
+    }
+    return 0;
+}
+
 int usage(const std::string &cmd) {
     std::cerr << "Usage:\n " << cmd << " list-groups\n " << cmd << " list-ports <group-name>\n"
             << " " << cmd << " list-builds <group/port>\n "
@@ -196,7 +224,8 @@ int usage(const std::string &cmd) {
             << " " << cmd << " extract <group/port/build>\n " << cmd << " configure <group/port/build>\n"
             << " " << cmd << " build <group/port/build>\n " << cmd << " install <group/port/build>\n"
             << " " << cmd << " package <group/port/build>\n " << cmd << " unpack <file> <target-dir>\n"
-            << " " << cmd << " register <file> <target-dir>\n" << cmd << " find <pkg> <root-dir>\n"
+            << " " << cmd << " register <file> <target-dir>\n " << cmd << " find <pkg> <root-dir>\n"
+            << " " << cmd << " verify <pkg> <root-dir>\n"
             << " " << cmd << " rebootstrap <group/port/build>\n " << cmd << " bootstrapshell <group/port/build>\n"
             << " " << cmd << " chroot <dir>\n";
     return 1;
@@ -407,6 +436,27 @@ static int RunCmd(const std::string &cmdExec, Ports &ports, Command cmd, std::ve
             }
             return Find(port, rootDir);
         }
+        case Command::VERIFY: {
+            std::string port{};
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                port = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage(cmdExec);
+                }
+            }
+            return Verify(port, rootDir);
+        }
         case Command::REBOOTSTRAP: {
             std::string buildName{};
             {
@@ -472,6 +522,7 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("package", Command::PACKAGE);
     cmdMap.insert_or_assign("register", Command::REGISTER);
     cmdMap.insert_or_assign("find", Command::FIND);
+    cmdMap.insert_or_assign("verify", Command::VERIFY);
     cmdMap.insert_or_assign("unpack", Command::UNPACK);
     cmdMap.insert_or_assign("rebootstrap", Command::REBOOTSTRAP);
     cmdMap.insert_or_assign("bootstrapshell", Command::BOOTSTRAPSHELL);

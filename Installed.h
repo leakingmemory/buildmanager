@@ -8,10 +8,17 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <functional>
 
 struct InstalledFile {
     std::string hashOrType;
     std::string filename;
+};
+
+enum class FileMatch {
+    OK,
+    NOT_FOUND,
+    NOT_MATCHING
 };
 
 class Installed {
@@ -25,6 +32,7 @@ private:
 public:
     Installed(const std::filesystem::path &dbpath, const std::string &group, const std::string &name, const std::string &version);
     [[nodiscard]] std::vector<InstalledFile> GetFiles() const;
+    void Verify(const std::filesystem::path &rootPath, const std::function<void (const std::filesystem::path &, FileMatch)> &) const;
     [[nodiscard]] std::string GetGroup() const {
         return group;
     }

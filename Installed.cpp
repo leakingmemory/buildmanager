@@ -3,6 +3,7 @@
 //
 
 #include "Installed.h"
+#include "sha2alg.h"
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -111,4 +112,48 @@ std::vector<InstalledFile> Installed::GetFiles() const {
         }
     }
     return list;
+}
+
+void Installed::Verify(const std::filesystem::path &rootPath, const std::function<void(const std::filesystem::path &, FileMatch)> &func) const {
+    auto files = GetFiles();
+    for (const auto &file : files) {
+        std::filesystem::path filePath{file.filename};
+        std::filesystem::path path = rootPath / filePath;
+        if (exists(path) || is_symlink(path)) {
+            std::string hashValue{};
+            if (is_symlink(path)) {
+                hashValue = "link";
+            } else if (is_directory(path)) {
+                hashValue = "dir";
+            } else {
+                std::fstream inputStream{};
+                inputStream.open(path, std::ios_base::in | std::ios_base::binary);
+                if (!inputStream.is_open()) {
+                    throw InstalledException("Failed to open file for hashing");
+                }
+                sha256 hash{};
+                while (true) {
+                    sha256::chunk_type chunk;
+                    inputStream.read((char *) &(chunk[0]), sizeof(chunk));
+                    if (inputStream) {
+                        hash.Consume(chunk);
+                    } else {
+                        auto sz = inputStream.gcount();
+                        if (sz > 0) {
+                            hash.Final((uint8_t *) &(chunk[0]), sz);
+                        }
+                        break;
+                    }
+                }
+                hashValue = hash.Hex();
+            }
+            if (hashValue == file.hashOrType) {
+                func(filePath, FileMatch::OK);
+            } else {
+                func(filePath, FileMatch::NOT_MATCHING);
+            }
+        } else {
+            func(filePath, FileMatch::NOT_FOUND);
+        }
+    }
 }
