@@ -117,3 +117,87 @@ Unpack::Unpack(std::string path, std::string destdir) : Unpack(path) {
     fork.CloseInput();
     fork.Require();
 }
+
+void Unpack::Register(std::string destdir) {
+    if (group.empty() || name.empty() || version.empty()) {
+        throw UnpackException("Invalid package for register (missing group, name and/or version)");
+    }
+    std::filesystem::path dbdir = destdir;
+    if (!exists(dbdir)) {
+        std::cerr << "error: destination root for register pkg not found: " << destdir << "\n";
+        throw UnpackException("Destination root");
+    }
+    dbdir = dbdir / "var";
+    if (!exists(dbdir) && !create_directory(dbdir)) {
+        std::cerr << "error: destination root /var for register pkg not found: " << destdir << "\n";
+        throw UnpackException("Destination root");
+    }
+    dbdir = dbdir / "lib";
+    if (!exists(dbdir) && !create_directory(dbdir)) {
+        std::cerr << "error: destination root /var/lib for register pkg not found: " << destdir << "\n";
+        throw UnpackException("Destination root");
+    }
+    dbdir = dbdir / "jpkg";
+    if (!exists(dbdir) && !create_directory(dbdir)) {
+        std::cerr << "error: destination root /var/lib/jpkg for register pkg not found: " << destdir << "\n";
+        throw UnpackException("Destination root");
+    }
+    auto pkgdir = dbdir / group;
+    if (!exists(pkgdir) && !create_directory(pkgdir)) {
+        std::cerr << "error: unable to create pkgdir in /var/lib/jpkg for group: " << group << "\n";
+        throw UnpackException("Destination root");
+    }
+    pkgdir = pkgdir / name;
+    if (!exists(pkgdir) && !create_directory(pkgdir)) {
+        std::cerr << "error: unable to create pkgdir in /var/lib/jpkg in group " << group << " for: " << name << "\n";
+        throw UnpackException("Destination root");
+    }
+    pkgdir = pkgdir / version;
+    if (!exists(pkgdir) && !create_directory(pkgdir)) {
+        std::cerr << "error: unable to create pkgdir for version " << version << " in group " << group << " and pkg " << name << "\n";
+        throw UnpackException("Destination root");
+    }
+    if (exists(pkgdir / "info.json") && exists(pkgdir / "files")) {
+        std::cerr << "error: " << group << "/" << name << "/" << version << " already indstalled\n";
+        throw UnpackException("Already installed");
+    }
+    {
+        std::string clob{};
+        {
+            nlohmann::json pkgData{};
+            pkgData.emplace("group", group);
+            pkgData.emplace("name", name);
+            pkgData.emplace("version", version);
+            {
+                auto jsonArray = nlohmann::json::array();
+                for (const auto &dep: rdep) {
+                    jsonArray.push_back(dep);
+                }
+                pkgData.emplace("rdep", jsonArray);
+            }
+            clob = pkgData.dump();
+        }
+        std::ofstream infoOut{};
+        {
+            std::string filename = pkgdir / "info.json";
+            infoOut.open(filename, std::ios_base::out | std::ios_base::binary);
+        }
+        infoOut.write(clob.c_str(), (std::streamsize) clob.size());
+        infoOut.close();
+        if (!infoOut) {
+            throw UnpackException("Unable to register package as installed (info.json)");
+        }
+    }
+    {
+        std::ofstream filesOut{};
+        {
+            std::string filename = pkgdir / "files";
+            filesOut.open(filename, std::ios_base::out | std::ios_base::binary);
+            filesOut.write(fileList.c_str(), fileList.size());
+        }
+        filesOut.close();
+        if (!filesOut) {
+            throw UnpackException("Unable to register package as installed (files)");
+        }
+    }
+}

@@ -24,6 +24,7 @@ enum class Command {
     INSTALL,
     PACKAGE,
     UNPACK,
+    REGISTER,
     REBOOTSTRAP,
     BOOTSTRAPSHELL,
     CHROOT
@@ -163,6 +164,12 @@ static int Unpack(const std::string &filename, const std::string &targetDir) {
     return 0;
 }
 
+static int Register(const std::string &filename, const std::string &targetDir) {
+    class Unpack unpack{filename};
+    unpack.Register(targetDir);
+    return 0;
+}
+
 int usage(const std::string &cmd) {
     std::cerr << "Usage:\n " << cmd << " list-groups\n " << cmd << " list-ports <group-name>\n"
             << " " << cmd << " list-builds <group/port>\n "
@@ -170,6 +177,7 @@ int usage(const std::string &cmd) {
             << " " << cmd << " extract <group/port/build>\n " << cmd << " configure <group/port/build>\n"
             << " " << cmd << " build <group/port/build>\n " << cmd << " install <group/port/build>\n"
             << " " << cmd << " package <group/port/build>\n " << cmd << " unpack <file> <target-dir>\n"
+            << " " << cmd << " register <file> <target-dir>\n"
             << " " << cmd << " rebootstrap <group/port/build>\n " << cmd << " bootstrapshell <group/port/build>\n"
             << " " << cmd << " chroot <dir>\n";
     return 1;
@@ -338,6 +346,27 @@ static int RunCmd(const std::string &cmdExec, Ports &ports, Command cmd, std::ve
             }
             return Unpack(filename, targetDir);
         }
+        case Command::REGISTER: {
+            std::string filename{};
+            std::string targetDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                filename = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                targetDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage(cmdExec);
+                }
+            }
+            return Register(filename, targetDir);
+        }
         case Command::REBOOTSTRAP: {
             std::string buildName{};
             {
@@ -401,6 +430,7 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("build", Command::BUILD);
     cmdMap.insert_or_assign("install", Command::INSTALL);
     cmdMap.insert_or_assign("package", Command::PACKAGE);
+    cmdMap.insert_or_assign("register", Command::REGISTER);
     cmdMap.insert_or_assign("unpack", Command::UNPACK);
     cmdMap.insert_or_assign("rebootstrap", Command::REBOOTSTRAP);
     cmdMap.insert_or_assign("bootstrapshell", Command::BOOTSTRAPSHELL);

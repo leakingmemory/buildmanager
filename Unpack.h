@@ -20,6 +20,7 @@ private:
 public:
     Unpack(std::string path);
     Unpack(std::string path, std::string destdir);
+    void Register(std::string destdir);
 };
 
 
