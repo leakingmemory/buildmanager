@@ -33,6 +33,7 @@ public:
     Installed(const std::filesystem::path &dbpath, const std::string &group, const std::string &name, const std::string &version);
     [[nodiscard]] std::vector<InstalledFile> GetFiles() const;
     void Verify(const std::filesystem::path &rootPath, const std::function<void (const std::filesystem::path &, FileMatch)> &) const;
+    void Uninstall(const std::filesystem::path &rootPath) const;
     [[nodiscard]] std::string GetGroup() const {
         return group;
     }

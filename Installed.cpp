@@ -6,6 +6,7 @@
 #include "sha2alg.h"
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <iostream>
 
 class InstalledException : public std::exception {
 private:
@@ -154,6 +155,46 @@ void Installed::Verify(const std::filesystem::path &rootPath, const std::functio
             }
         } else {
             func(filePath, FileMatch::NOT_FOUND);
+        }
+    }
+}
+
+void Installed::Uninstall(const std::filesystem::path &rootPath) const {
+    std::vector<std::filesystem::path> directories{};
+    Verify(rootPath, [&rootPath, &directories] (auto path, auto match) {
+        switch (match) {
+            case FileMatch::OK: {
+                auto fullPath = rootPath / path;
+                if (!is_directory(fullPath)) {
+                    std::string fullPathStr = fullPath;
+                    if (unlink(fullPathStr.c_str()) != 0) {
+                        std::cerr << "Failed to remove file: " << fullPathStr << "\n";
+                    }
+                } else {
+                    directories.push_back(fullPath);
+                }
+                break;
+            }
+            case FileMatch::NOT_MATCHING:
+                std::cerr << "Modified: " << path << " (not deleted)\n";
+                break;
+            case FileMatch::NOT_FOUND:
+                std::cerr << "Not found: " << path << "\n";
+                break;
+        }
+    });
+    int n = 1;
+    while (n > 0) {
+        n = 0;
+        auto iterator = directories.begin();
+        while (iterator != directories.end()) {
+            std::error_code ec;
+            if (std::filesystem::remove(*iterator, ec)) {
+                ++n;
+                directories.erase(iterator);
+            } else {
+                ++iterator;
+            }
         }
     }
 }
