@@ -18,6 +18,7 @@ enum class Command {
     LIST_GROUPS,
     LIST_PORTS,
     LIST_BUILDS,
+    LIST_INSTALLED,
     CLEAN,
     FETCH,
     EXTRACT,
@@ -68,6 +69,20 @@ static int ListBuilds(Ports &ports, const std::string &portName) {
     return 0;
 }
 
+static int ListInstalled(const std::string &rootDir) {
+    Db db{rootDir};
+    auto groups = db.GetGroups();
+    for (const auto &group : groups) {
+        auto ports = group.GetPorts();
+        for (const auto &port : ports) {
+            auto versions = port.GetVersions();
+            for (const auto &version : versions) {
+                std::cout << version.GetGroup() << "/" << version.GetName() << "/" << version.GetVersion() << "\n";
+            }
+        }
+    }
+    return 0;
+}
 
 static int Fetch(Ports &ports, const std::string &buildName) {
     Build build = GetBuild(ports, buildName, {});
@@ -289,8 +304,8 @@ static int Files(const std::string &port, const std::string &rootDir) {
 
 int usage(const std::string &cmd) {
     std::cerr << "Usage:\n " << cmd << " list-groups\n " << cmd << " list-ports <group-name>\n"
-            << " " << cmd << " list-builds <group/port>\n "
-            << " " << cmd << " clean <group/port/build>\n" << cmd << " fetch <group/port/build>\n"
+            << " " << cmd << " list-builds <group/port>\n " << cmd << "list-installed <root-dir>\n"
+            << " " << cmd << " clean <group/port/build>\n " << cmd << " fetch <group/port/build>\n"
             << " " << cmd << " extract <group/port/build>\n " << cmd << " configure <group/port/build>\n"
             << " " << cmd << " build <group/port/build>\n " << cmd << " install <group/port/build>\n"
             << " " << cmd << " package <group/port/build>\n " << cmd << " unpack <file> <target-dir>\n"
@@ -339,6 +354,21 @@ static int RunCmd(const std::string &cmdExec, Ports &ports, Command cmd, std::ve
                 }
             }
             return ListBuilds(ports, portName);
+        }
+        case Command::LIST_INSTALLED: {
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage(cmdExec);
+                }
+            }
+            return ListInstalled(rootDir);
         }
         case Command::CLEAN: {
             std::string buildName{};
@@ -669,6 +699,7 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("list-groups", Command::LIST_GROUPS);
     cmdMap.insert_or_assign("list-ports", Command::LIST_PORTS);
     cmdMap.insert_or_assign("list-builds", Command::LIST_BUILDS);
+    cmdMap.insert_or_assign("list-installed", Command::LIST_INSTALLED);
     cmdMap.insert_or_assign("clean", Command::CLEAN);
     cmdMap.insert_or_assign("fetch", Command::FETCH);
     cmdMap.insert_or_assign("extract", Command::EXTRACT);

@@ -45,7 +45,7 @@ private:
     std::vector<std::string> groups;
 public:
     Db(const std::filesystem::path &rootpath);
-    std::vector<DbGroup> GetGroups();
+    std::vector<DbGroup> GetGroups() const ;
     [[nodiscard]] Installed Find(const std::string &port) const;
 };
 
@@ -56,7 +56,7 @@ private:
     std::vector<std::string> ports;
 public:
     DbGroup(const std::filesystem::path &dbpath, const std::string &group);
-    std::vector<DbPort> GetPorts();
+    std::vector<DbPort> GetPorts() const;
     [[nodiscard]] Installed Find(const std::string &port) const;
 };
 

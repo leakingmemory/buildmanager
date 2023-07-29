@@ -62,7 +62,7 @@ DbPort::DbPort(const std::filesystem::path &dbpath, const std::string &group, co
     }
 }
 
-std::vector<DbGroup> Db::GetGroups() {
+std::vector<DbGroup> Db::GetGroups() const {
     std::vector<DbGroup> groups{};
     for (const auto &group : this->groups) {
         groups.emplace_back(path, group);
@@ -70,7 +70,7 @@ std::vector<DbGroup> Db::GetGroups() {
     return groups;
 }
 
-std::vector<DbPort> DbGroup::GetPorts() {
+std::vector<DbPort> DbGroup::GetPorts() const {
     std::vector<DbPort> ports{};
     for (const auto &port : this->ports) {
         ports.emplace_back(dbpath, group, port);
