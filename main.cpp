@@ -30,6 +30,7 @@ enum class Command {
     FIND,
     VERIFY,
     UNINSTALL,
+    UNREGISTER,
     REBOOTSTRAP,
     BOOTSTRAPSHELL,
     CHROOT
@@ -233,6 +234,21 @@ static int Uninstall(const std::string &port, const std::string &rootDir) {
     return 0;
 }
 
+static int Unregister(const std::string &port, const std::string &rootDir) {
+    Db db{rootDir};
+    try {
+        auto installedPort = db.Find(port);
+        installedPort.Unregister();
+    } catch (const PkgAmbiguous &amb) {
+        std::cout << "Ambiguous: " << amb.what() << "\n";
+        return 1;
+    } catch (const PkgNotFound &notFound) {
+        std::cout << "Not found: " << notFound.what() << "\n";
+        return 1;
+    }
+    return 0;
+}
+
 int usage(const std::string &cmd) {
     std::cerr << "Usage:\n " << cmd << " list-groups\n " << cmd << " list-ports <group-name>\n"
             << " " << cmd << " list-builds <group/port>\n "
@@ -242,6 +258,7 @@ int usage(const std::string &cmd) {
             << " " << cmd << " package <group/port/build>\n " << cmd << " unpack <file> <target-dir>\n"
             << " " << cmd << " register <file> <target-dir>\n " << cmd << " find <pkg> <root-dir>\n"
             << " " << cmd << " verify <pkg> <root-dir>\n " << cmd << " uninstall <pkg> <root-dir>\n"
+            << " " << cmd << " unregister <pkg> <root-dir>\n"
             << " " << cmd << " rebootstrap <group/port/build>\n " << cmd << " bootstrapshell <group/port/build>\n"
             << " " << cmd << " chroot <dir>\n";
     return 1;
@@ -494,6 +511,27 @@ static int RunCmd(const std::string &cmdExec, Ports &ports, Command cmd, std::ve
             }
             return Uninstall(port, rootDir);
         }
+        case Command::UNREGISTER: {
+            std::string port{};
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                port = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage(cmdExec);
+                }
+            }
+            return Unregister(port, rootDir);
+        }
         case Command::REBOOTSTRAP: {
             std::string buildName{};
             {
@@ -561,6 +599,7 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("find", Command::FIND);
     cmdMap.insert_or_assign("verify", Command::VERIFY);
     cmdMap.insert_or_assign("uninstall", Command::UNINSTALL);
+    cmdMap.insert_or_assign("unregister", Command::UNREGISTER);
     cmdMap.insert_or_assign("unpack", Command::UNPACK);
     cmdMap.insert_or_assign("rebootstrap", Command::REBOOTSTRAP);
     cmdMap.insert_or_assign("bootstrapshell", Command::BOOTSTRAPSHELL);

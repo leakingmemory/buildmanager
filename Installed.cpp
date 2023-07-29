@@ -198,3 +198,23 @@ void Installed::Uninstall(const std::filesystem::path &rootPath) const {
         }
     }
 }
+
+void Installed::Unregister() const {
+    auto filesPath = path / "files";
+    std::error_code ec;
+    {
+        auto infoPath = path / "info.json";
+        if (!std::filesystem::remove(infoPath, ec)) {
+            if (!std::filesystem::remove(filesPath, ec)) {
+                std::filesystem::remove(path, ec);
+                throw InstalledException("Unregister info.json and files");
+            }
+            throw InstalledException("Unregister info.json");
+        }
+    }
+    if (!std::filesystem::remove(filesPath, ec)) {
+        std::filesystem::remove(path, ec);
+        throw InstalledException("Unregister files");
+    }
+    std::filesystem::remove(path, ec);
+}

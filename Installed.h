@@ -34,6 +34,7 @@ public:
     [[nodiscard]] std::vector<InstalledFile> GetFiles() const;
     void Verify(const std::filesystem::path &rootPath, const std::function<void (const std::filesystem::path &, FileMatch)> &) const;
     void Uninstall(const std::filesystem::path &rootPath) const;
+    void Unregister() const;
     [[nodiscard]] std::string GetGroup() const {
         return group;
     }
