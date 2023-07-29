@@ -31,6 +31,8 @@ enum class Command {
     VERIFY,
     UNINSTALL,
     UNREGISTER,
+    RDEP,
+    FILES,
     REBOOTSTRAP,
     BOOTSTRAPSHELL,
     CHROOT
@@ -249,6 +251,42 @@ static int Unregister(const std::string &port, const std::string &rootDir) {
     return 0;
 }
 
+static int Rdep(const std::string &port, const std::string &rootDir) {
+    Db db{rootDir};
+    try {
+        auto installedPort = db.Find(port);
+        auto rdep = installedPort.GetRdep();
+        for (const auto &dep : rdep) {
+            std::cout << dep << "\n";
+        }
+    } catch (const PkgAmbiguous &amb) {
+        std::cout << "Ambiguous: " << amb.what() << "\n";
+        return 1;
+    } catch (const PkgNotFound &notFound) {
+        std::cout << "Not found: " << notFound.what() << "\n";
+        return 1;
+    }
+    return 0;
+}
+
+static int Files(const std::string &port, const std::string &rootDir) {
+    Db db{rootDir};
+    try {
+        auto installedPort = db.Find(port);
+        auto files = installedPort.GetFiles();
+        for (const auto &file : files) {
+            std::cout << file.filename << "\n";
+        }
+    } catch (const PkgAmbiguous &amb) {
+        std::cout << "Ambiguous: " << amb.what() << "\n";
+        return 1;
+    } catch (const PkgNotFound &notFound) {
+        std::cout << "Not found: " << notFound.what() << "\n";
+        return 1;
+    }
+    return 0;
+}
+
 int usage(const std::string &cmd) {
     std::cerr << "Usage:\n " << cmd << " list-groups\n " << cmd << " list-ports <group-name>\n"
             << " " << cmd << " list-builds <group/port>\n "
@@ -258,7 +296,8 @@ int usage(const std::string &cmd) {
             << " " << cmd << " package <group/port/build>\n " << cmd << " unpack <file> <target-dir>\n"
             << " " << cmd << " register <file> <target-dir>\n " << cmd << " find <pkg> <root-dir>\n"
             << " " << cmd << " verify <pkg> <root-dir>\n " << cmd << " uninstall <pkg> <root-dir>\n"
-            << " " << cmd << " unregister <pkg> <root-dir>\n"
+            << " " << cmd << " unregister <pkg> <root-dir>\n " << cmd << " rdep <pkg> <root-dir>\n"
+            << " " << cmd << " files <pkg> <root-dir>\n"
             << " " << cmd << " rebootstrap <group/port/build>\n " << cmd << " bootstrapshell <group/port/build>\n"
             << " " << cmd << " chroot <dir>\n";
     return 1;
@@ -532,6 +571,48 @@ static int RunCmd(const std::string &cmdExec, Ports &ports, Command cmd, std::ve
             }
             return Unregister(port, rootDir);
         }
+        case Command::RDEP: {
+            std::string port{};
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                port = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage(cmdExec);
+                }
+            }
+            return Rdep(port, rootDir);
+        }
+        case Command::FILES: {
+            std::string port{};
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                port = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage(cmdExec);
+                }
+            }
+            return Files(port, rootDir);
+        }
         case Command::REBOOTSTRAP: {
             std::string buildName{};
             {
@@ -600,6 +681,8 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("verify", Command::VERIFY);
     cmdMap.insert_or_assign("uninstall", Command::UNINSTALL);
     cmdMap.insert_or_assign("unregister", Command::UNREGISTER);
+    cmdMap.insert_or_assign("rdep", Command::RDEP);
+    cmdMap.insert_or_assign("files", Command::FILES);
     cmdMap.insert_or_assign("unpack", Command::UNPACK);
     cmdMap.insert_or_assign("rebootstrap", Command::REBOOTSTRAP);
     cmdMap.insert_or_assign("bootstrapshell", Command::BOOTSTRAPSHELL);

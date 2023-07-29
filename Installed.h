@@ -44,6 +44,9 @@ public:
     [[nodiscard]] std::string GetVersion() const {
         return version;
     }
+    [[nodiscard]] std::vector<std::string> GetRdep() const {
+        return rdep;
+    }
 };
 
 
