@@ -1671,15 +1671,19 @@ void Build::Make() {
         builddir = port->GetRoot() / "work" / cm;
     }
     if (exists(builddir) && is_directory(builddir)) {
+        Sysconfig sysconfig{};
         if (tooling == Tooling::BOOTSTRAP) {
-            Fork f{[this] () {
+            if (geteuid() != 0) {
+                throw BuildException("Bootstrap build unfortunately requires root");
+            }
+            Fork f{[this, &sysconfig] () {
                 MakeBootstrap();
                 return 0;
             }};
             f.Require();
+            ReBootstrap();
         } else {
             auto env = Exec::getenv();
-            Sysconfig sysconfig{};
             Buildenv buildenv{sysconfig, cflags, cxxflags, ldflags, sysrootCxxflags, sysrootLdflags, nosysrootLdflags, nobootstrapLdflags, requiresClang, IsBootstrapping(flags)};
             buildenv.FilterEnv(env);
             ApplyEnv(buildenv.Sysroot(), env);
@@ -1859,6 +1863,7 @@ void Build::Install() {
                 pkg.append(build.GetVersion());
                 pkg.append(".pkg");
                 Unpack unpack{pkgdir / pkg, installdir};
+                unpack.Register(installdir);
             }
         } else if (tooling != Tooling::CUSTOM) {
             Fork f{[this, builddir, installdir]() {
