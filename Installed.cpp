@@ -7,6 +7,9 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <iostream>
+extern "C" {
+#include <unistd.h>
+}
 
 class InstalledException : public std::exception {
 private:
