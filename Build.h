@@ -19,6 +19,16 @@ class Build;
 
 Build GetBuild(Ports &ports, const std::string &buildName, const std::vector<std::string> &flags);
 
+struct BootstrapRebuild {
+    std::string name;
+    bool reinstall;
+};
+
+struct BootstrapInstall {
+    std::string name;
+    bool registerInstall;
+};
+
 class Build {
     std::shared_ptr<const Port> port;
     path buildfile;
@@ -33,8 +43,8 @@ class Build {
     std::string libcppHeaderBuild;
     std::vector<std::string> bootstrap;
     std::vector<std::string> staticBootstrap;
-    std::vector<std::string> bootstrapRebuild;
-    std::vector<std::string> bootstrapInstall;
+    std::vector<BootstrapRebuild> bootstrapRebuild;
+    std::vector<BootstrapInstall> bootstrapInstall;
     /* normal: */
     std::string cflags;
     std::string cxxflags;

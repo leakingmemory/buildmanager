@@ -221,8 +221,33 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                     while (iterator != rebuildItem.end()) {
                         auto rebuildBootstrap = *iterator;
                         if (rebuildBootstrap.is_string()) {
-                            std::string bootstrap = rebuildBootstrap;
-                            this->bootstrapRebuild.emplace_back(bootstrap);
+                            BootstrapRebuild rebuild{
+                                .name = rebuildBootstrap,
+                                .reinstall = true
+                            };
+                            this->bootstrapRebuild.emplace_back(rebuild);
+                        } else if (rebuildBootstrap.is_object()) {
+                            std::string name{};
+                            bool reinstall{true};
+                            {
+                                auto iterator = rebuildBootstrap.find("name");
+                                if (iterator != rebuildBootstrap.end() && iterator->is_string()) {
+                                    name = *iterator;
+                                }
+                            }
+                            {
+                                auto iterator = rebuildBootstrap.find("reinstall");
+                                if (iterator != rebuildBootstrap.end() && iterator->is_boolean()) {
+                                    reinstall = *iterator;
+                                }
+                            }
+                            if (!name.empty()) {
+                                BootstrapRebuild rebuild{
+                                        .name = name,
+                                        .reinstall = reinstall
+                                };
+                                this->bootstrapRebuild.emplace_back(rebuild);
+                            }
                         }
                         ++iterator;
                     }
@@ -238,8 +263,33 @@ Build::Build(const std::shared_ptr<const Port> &port, path buildfile, const std:
                     while (iterator != installItem.end()) {
                         auto installBootstrapItem = *iterator;
                         if (installBootstrapItem.is_string()) {
-                            std::string bootstrap = installBootstrapItem;
-                            this->bootstrapInstall.emplace_back(bootstrap);
+                            BootstrapInstall install{
+                                .name = installBootstrapItem,
+                                .registerInstall = true
+                            };
+                            this->bootstrapInstall.emplace_back(install);
+                        } else if (installBootstrapItem.is_object()) {
+                            std::string name{};
+                            bool registerInstall{true};
+                            {
+                                auto iterator = installBootstrapItem.find("name");
+                                if (iterator != installBootstrapItem.end() && iterator->is_string()) {
+                                    name = *iterator;
+                                }
+                            }
+                            {
+                                auto iterator = installBootstrapItem.find("register");
+                                if (iterator != installBootstrapItem.end() && iterator->is_boolean()) {
+                                    registerInstall = *iterator;
+                                }
+                            }
+                            if (!name.empty()) {
+                                BootstrapInstall install{
+                                        .name = name,
+                                        .registerInstall = registerInstall
+                                };
+                                this->bootstrapInstall.emplace_back(install);
+                            }
                         }
                         ++iterator;
                     }
@@ -1593,14 +1643,15 @@ void Build::ReBootstrap() {
         std::cerr << "Error: Rebootstrap unfortunately requires root\n";
         return;
     }
-    std::vector<Build> bootstrapRebuilds{};
-    for (const auto &bootstrapName : this->bootstrapRebuild) {
-        auto build = GetBuild(*ports, bootstrapName, {});
+    std::vector<std::tuple<BootstrapRebuild,Build>> bootstrapRebuilds{};
+    for (const auto &bootstrapRebuild : this->bootstrapRebuild) {
+        auto build = GetBuild(*ports, bootstrapRebuild.name, {});
         if (!build.IsValid()) {
-            std::cerr << "Build " << bootstrapName << " not found.\n";
+            std::cerr << "Build " << bootstrapRebuild.name << " not found.\n";
             throw BuildException("Build not found");
         }
-        bootstrapRebuilds.emplace_back(build);
+        std::tuple<BootstrapRebuild,Build> tuple = std::make_tuple(bootstrapRebuild,build);
+        bootstrapRebuilds.emplace_back(tuple);
     }
     path tmpdir = builddir / "tmp";
     path devdir = builddir / "dev";
@@ -1634,21 +1685,23 @@ void Build::ReBootstrap() {
         }
         chroot(builddirStr.c_str());
         for (auto &build : bootstrapRebuilds) {
-            build.Clean();
+            std::get<1>(build).Clean();
         }
         for (auto &build : bootstrapRebuilds) {
-            build.Package();
-            build.Clean();
+            std::get<1>(build).Package();
+            std::get<1>(build).Clean();
             path native = "/";
             native = native / "native";
-            if (exists(native)) {
-                std::string pkg{build.GetName()};
-                pkg.append("-");
-                pkg.append(build.GetVersion());
-                pkg.append(".pkg");
-                Unpack unpack{pkg, ".."};
-            } else {
-                throw BuildException("Unexpected directory struct, something is wrong");
+            if (std::get<0>(build).reinstall) {
+                if (exists(native)) {
+                    std::string pkg{std::get<1>(build).GetName()};
+                    pkg.append("-");
+                    pkg.append(std::get<1>(build).GetVersion());
+                    pkg.append(".pkg");
+                    Unpack unpack{pkg, ".."};
+                } else {
+                    throw BuildException("Unexpected directory struct, something is wrong");
+                }
             }
         }
         return 0;
@@ -1844,26 +1897,29 @@ void Build::Install() {
             extract.Require();
         } else if (tooling == Tooling::BOOTSTRAP) {
             auto ports = Ports::Create(port->GetGroup()->GetPortsRoot()->GetRoot().c_str());
-            std::vector<Build> bootstrapInstalls{};
-            for (const auto &bootstrapName : this->bootstrapInstall) {
-                auto build = GetBuild(*ports, bootstrapName, {});
+            std::vector<std::tuple<BootstrapInstall,Build>> bootstrapInstalls{};
+            for (const auto &bootstrapInstall : this->bootstrapInstall) {
+                auto build = GetBuild(*ports, bootstrapInstall.name, {});
                 if (!build.IsValid()) {
-                    std::cerr << "Build " << bootstrapName << " not found.\n";
+                    std::cerr << "Build " << bootstrapInstall.name << " not found.\n";
                     throw BuildException("Build not found");
                 }
-                bootstrapInstalls.emplace_back(build);
+                std::tuple<BootstrapInstall,Build> tuple = std::make_tuple(bootstrapInstall,build);
+                bootstrapInstalls.emplace_back(tuple);
             }
             auto pkgdir = builddir / "native";
             if (!exists(pkgdir)) {
                 throw BuildException("Pkgdir not found for bootstrap, run build or rebootstrap");
             }
             for (const auto &build : bootstrapInstalls) {
-                std::string pkg{build.GetName()};
+                std::string pkg{std::get<1>(build).GetName()};
                 pkg.append("-");
-                pkg.append(build.GetVersion());
+                pkg.append(std::get<1>(build).GetVersion());
                 pkg.append(".pkg");
                 Unpack unpack{pkgdir / pkg, installdir};
-                unpack.Register(installdir);
+                if (std::get<0>(build).registerInstall) {
+                    unpack.Register(installdir);
+                }
             }
         } else if (tooling != Tooling::CUSTOM) {
             Fork f{[this, builddir, installdir]() {

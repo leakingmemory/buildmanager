@@ -70,8 +70,14 @@ Fork::Fork(const std::function<int()> &func, ForkInputOutput forkInputOutput) : 
                 }
             }
         }
-        auto res = func();
-        exit(res);
+        try {
+            auto res = func();
+            exit(res);
+        } catch (const std::exception &e) {
+            const auto *what = e.what();
+            std::cerr << "error: " << (what != nullptr ? what : "std::exception(what=nullptr)") << "\n";
+            exit(1);
+        }
     }
     if (forkInputOutput != ForkInputOutput::NONE) {
         if (close(inpipefds[0]) != 0) {
@@ -103,6 +109,7 @@ Fork::Fork(Fork &&mv) :
 Fork &Fork::operator=(Fork &&mv) {
     Fork sw{std::move(mv)};
     Swap(sw);
+    return *this;
 }
 
 void Fork::Swap(Fork &other) {

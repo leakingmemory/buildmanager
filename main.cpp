@@ -744,7 +744,13 @@ int cppmain(const std::string &cmd, const std::vector<std::string> &i_args) {
     if (command == Command::NONE) {
         return usage(cmd);
     }
-    return RunCmd(cmd, *ports, command, args);
+    try {
+        return RunCmd(cmd, *ports, command, args);
+    } catch (const std::exception &e) {
+        const auto *what = e.what();
+        std::cerr << "error: " << (what != nullptr ? what : "std::exception(what=nullptr)") << "\n";
+        return 1;
+    }
 }
 
 extern "C" {
