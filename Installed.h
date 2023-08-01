@@ -31,7 +31,9 @@ private:
     std::filesystem::path path;
 public:
     Installed(const std::filesystem::path &dbpath, const std::string &group, const std::string &name, const std::string &version);
+    static std::vector<InstalledFile> GetFiles(const std::string &files);
     [[nodiscard]] std::vector<InstalledFile> GetFiles() const;
+    static FileMatch Verify(const std::filesystem::path &rootPath, const InstalledFile &file);
     void Verify(const std::filesystem::path &rootPath, const std::function<void (const std::filesystem::path &, FileMatch)> &) const;
     void Uninstall(const std::filesystem::path &rootPath) const;
     void Unregister() const;

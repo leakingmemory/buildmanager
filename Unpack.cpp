@@ -5,6 +5,7 @@
 #include "Unpack.h"
 #include "PkgHdr.h"
 #include "Exec.h"
+#include "Installed.h"
 #include <iostream>
 #include <nlohmann/json.hpp>
 extern "C" {
@@ -200,4 +201,71 @@ void Unpack::Register(std::string destdir) {
             throw UnpackException("Unable to register package as installed (files)");
         }
     }
+}
+
+void Unpack::Replace(Installed &installed, std::string destdir) {
+    auto oldFiles = installed.GetFiles();
+    {
+        auto newFiles = Installed::GetFiles(fileList);
+        {
+            auto iterator = oldFiles.begin();
+            while (iterator != oldFiles.end()) {
+                const auto &oldFile = *iterator;
+                bool found{false};
+                for (const auto &newFile: newFiles) {
+                    if (oldFile.filename == newFile.filename) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) {
+                    oldFiles.erase(iterator);
+                } else {
+                    ++iterator;
+                }
+            }
+        }
+    }
+    std::vector<std::filesystem::path> directories{};
+    for (const auto &oldFile : oldFiles) {
+        std::filesystem::path rootPath{destdir};
+        std::filesystem::path filePath{oldFile.filename};
+        auto path = rootPath / filePath;
+        auto verify = Installed::Verify(destdir, oldFile);
+        switch (verify) {
+            case FileMatch::OK:
+                if (!is_directory(path)) {
+                    std::cout << "Removing old file " << path << "\n";
+                    std::string fullPathStr = path;
+                    if (unlink(fullPathStr.c_str()) != 0) {
+                        std::cerr << "Failed to remove file: " << fullPathStr << "\n";
+                    }
+                } else {
+                    directories.push_back(path);
+                }
+                break;
+            case FileMatch::NOT_MATCHING:
+                std::cerr << "Modified: " << path << " (not deleted)\n";
+                break;
+            case FileMatch::NOT_FOUND:
+                std::cerr << "Not found: " << path << "\n";
+                break;
+        }
+    }
+    int n = 1;
+    while (n > 0) {
+        n = 0;
+        auto iterator = directories.begin();
+        while (iterator != directories.end()) {
+            std::error_code ec;
+            if (std::filesystem::remove(*iterator, ec)) {
+                ++n;
+                directories.erase(iterator);
+            } else {
+                ++iterator;
+            }
+        }
+    }
+    installed.Unregister();
+    Register(destdir);
 }

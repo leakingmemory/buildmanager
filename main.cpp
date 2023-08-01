@@ -27,6 +27,7 @@ enum class Command {
     INSTALL,
     PACKAGE,
     UNPACK,
+    REPLACE,
     REGISTER,
     FIND,
     VERIFY,
@@ -187,6 +188,22 @@ static int Unpack(const std::string &filename, const std::string &targetDir) {
     return 0;
 }
 
+static int Replace(const std::string &port, const std::string &filename, const std::string &targetDir) {
+    Db db{targetDir};
+    try {
+        auto installedPort = db.Find(port);
+        class Unpack unpack{filename, targetDir};
+        unpack.Replace(installedPort, targetDir);
+    } catch (const PkgAmbiguous &amb) {
+        std::cout << "Ambiguous: " << amb.what() << "\n";
+        return 1;
+    } catch (const PkgNotFound &notFound) {
+        std::cout << "Not found: " << notFound.what() << "\n";
+        return 1;
+    }
+    return 0;
+}
+
 static int Register(const std::string &filename, const std::string &targetDir) {
     class Unpack unpack{filename};
     unpack.Register(targetDir);
@@ -304,11 +321,12 @@ static int Files(const std::string &port, const std::string &rootDir) {
 
 int usage(const std::string &cmd) {
     std::cerr << "Usage:\n " << cmd << " list-groups\n " << cmd << " list-ports <group-name>\n"
-            << " " << cmd << " list-builds <group/port>\n " << cmd << "list-installed <root-dir>\n"
+            << " " << cmd << " list-builds <group/port>\n " << cmd << " list-installed <root-dir>\n"
             << " " << cmd << " clean <group/port/build>\n " << cmd << " fetch <group/port/build>\n"
             << " " << cmd << " extract <group/port/build>\n " << cmd << " configure <group/port/build>\n"
             << " " << cmd << " build <group/port/build>\n " << cmd << " install <group/port/build>\n"
-            << " " << cmd << " package <group/port/build>\n " << cmd << " unpack <file> <target-dir>\n"
+            << " " << cmd << " package <group/port/build>\n "
+            << " " << cmd << " unpack <file> <target-dir>\n" << cmd << " replace <group/port/build> <file> <target-dir>\n"
             << " " << cmd << " register <file> <target-dir>\n " << cmd << " find <pkg> <root-dir>\n"
             << " " << cmd << " verify <pkg> <root-dir>\n " << cmd << " uninstall <pkg> <root-dir>\n"
             << " " << cmd << " unregister <pkg> <root-dir>\n " << cmd << " rdep <pkg> <root-dir>\n"
@@ -495,6 +513,33 @@ static int RunCmd(const std::string &cmdExec, Ports &ports, Command cmd, std::ve
                 }
             }
             return Unpack(filename, targetDir);
+        }
+        case Command::REPLACE: {
+            std::string subject{};
+            std::string filename{};
+            std::string targetDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                subject = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                filename = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage(cmdExec);
+                }
+                targetDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage(cmdExec);
+                }
+            }
+            return Replace(subject, filename, targetDir);
         }
         case Command::REGISTER: {
             std::string filename{};
@@ -715,6 +760,7 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("rdep", Command::RDEP);
     cmdMap.insert_or_assign("files", Command::FILES);
     cmdMap.insert_or_assign("unpack", Command::UNPACK);
+    cmdMap.insert_or_assign("replace", Command::REPLACE);
     cmdMap.insert_or_assign("rebootstrap", Command::REBOOTSTRAP);
     cmdMap.insert_or_assign("bootstrapshell", Command::BOOTSTRAPSHELL);
     cmdMap.insert_or_assign("chroot", Command::CHROOT);

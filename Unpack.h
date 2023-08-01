@@ -8,6 +8,8 @@
 #include "Fork.h"
 #include <fstream>
 
+class Installed;
+
 class Unpack  {
 private:
     Fork fork;
@@ -21,6 +23,7 @@ public:
     Unpack(std::string path);
     Unpack(std::string path, std::string destdir);
     void Register(std::string destdir);
+    void Replace(Installed &installed, std::string destdir);
 };
 
 
