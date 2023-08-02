@@ -10,8 +10,7 @@
 #include "Exec.h"
 #include "Db.h"
 #include "Installed.h"
-
-const char *portdir = "/var/ports";
+#include "App.h"
 
 enum class Command {
     NONE,
@@ -319,426 +318,6 @@ static int Files(const std::string &port, const std::string &rootDir) {
     return 0;
 }
 
-int usage(const std::string &cmd) {
-    std::cerr << "Usage:\n " << cmd << " list-groups\n " << cmd << " list-ports <group-name>\n"
-            << " " << cmd << " list-builds <group/port>\n " << cmd << " list-installed <root-dir>\n"
-            << " " << cmd << " clean <group/port/build>\n " << cmd << " fetch <group/port/build>\n"
-            << " " << cmd << " extract <group/port/build>\n " << cmd << " configure <group/port/build>\n"
-            << " " << cmd << " build <group/port/build>\n " << cmd << " install <group/port/build>\n"
-            << " " << cmd << " package <group/port/build>\n "
-            << " " << cmd << " unpack <file> <target-dir>\n" << cmd << " replace <group/port/build> <file> <target-dir>\n"
-            << " " << cmd << " register <file> <target-dir>\n " << cmd << " find <pkg> <root-dir>\n"
-            << " " << cmd << " verify <pkg> <root-dir>\n " << cmd << " uninstall <pkg> <root-dir>\n"
-            << " " << cmd << " unregister <pkg> <root-dir>\n " << cmd << " rdep <pkg> <root-dir>\n"
-            << " " << cmd << " files <pkg> <root-dir>\n"
-            << " " << cmd << " rebootstrap <group/port/build>\n " << cmd << " bootstrapshell <group/port/build>\n"
-            << " " << cmd << " chroot <dir>\n";
-    return 1;
-}
-
-static int RunCmd(const std::string &cmdExec, Ports &ports, Command cmd, std::vector<std::string> &args) {
-    switch (cmd) {
-        case Command::LIST_GROUPS:
-            if (args.begin() != args.end()) {
-                return usage(cmdExec);
-            }
-            return ListGroups(ports);
-        case Command::LIST_PORTS: {
-            std::string groupName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                groupName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return ListPorts(ports, groupName);
-        }
-        case Command::LIST_BUILDS: {
-            std::string portName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                portName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return ListBuilds(ports, portName);
-        }
-        case Command::LIST_INSTALLED: {
-            std::string rootDir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                rootDir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return ListInstalled(rootDir);
-        }
-        case Command::CLEAN: {
-            std::string buildName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                buildName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Clean(ports, buildName);
-        }
-        case Command::FETCH: {
-            std::string buildName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                buildName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Fetch(ports, buildName);
-        }
-        case Command::EXTRACT: {
-            std::string buildName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                buildName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Extract(ports, buildName);
-        }
-        case Command::CONFIGURE: {
-            std::string buildName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                buildName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Configure(ports, buildName);
-        }
-        case Command::BUILD: {
-            std::string buildName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                buildName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Make(ports, buildName);
-        }
-        case Command::INSTALL: {
-            std::string buildName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                buildName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Install(ports, buildName);
-        }
-        case Command::PACKAGE: {
-            std::string buildName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                buildName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Package(ports, buildName);
-        }
-        case Command::UNPACK: {
-            std::string filename{};
-            std::string targetDir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                filename = *iterator;
-                ++iterator;
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                targetDir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Unpack(filename, targetDir);
-        }
-        case Command::REPLACE: {
-            std::string subject{};
-            std::string filename{};
-            std::string targetDir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                subject = *iterator;
-                ++iterator;
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                filename = *iterator;
-                ++iterator;
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                targetDir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Replace(subject, filename, targetDir);
-        }
-        case Command::REGISTER: {
-            std::string filename{};
-            std::string targetDir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                filename = *iterator;
-                ++iterator;
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                targetDir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Register(filename, targetDir);
-        }
-        case Command::FIND: {
-            std::string port{};
-            std::string rootDir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                port = *iterator;
-                ++iterator;
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                rootDir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Find(port, rootDir);
-        }
-        case Command::VERIFY: {
-            std::string port{};
-            std::string rootDir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                port = *iterator;
-                ++iterator;
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                rootDir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Verify(port, rootDir);
-        }
-        case Command::UNINSTALL: {
-            std::string port{};
-            std::string rootDir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                port = *iterator;
-                ++iterator;
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                rootDir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Uninstall(port, rootDir);
-        }
-        case Command::UNREGISTER: {
-            std::string port{};
-            std::string rootDir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                port = *iterator;
-                ++iterator;
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                rootDir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Unregister(port, rootDir);
-        }
-        case Command::RDEP: {
-            std::string port{};
-            std::string rootDir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                port = *iterator;
-                ++iterator;
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                rootDir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Rdep(port, rootDir);
-        }
-        case Command::FILES: {
-            std::string port{};
-            std::string rootDir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                port = *iterator;
-                ++iterator;
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                rootDir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Files(port, rootDir);
-        }
-        case Command::REBOOTSTRAP: {
-            std::string buildName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                buildName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Rebootstrap(ports, buildName);
-        }
-        case Command::BOOTSTRAPSHELL: {
-            std::string buildName{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                buildName = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return BootstrapShell(ports, buildName);
-        }
-        case Command::CHROOT: {
-            std::string dir{};
-            {
-                auto iterator = args.begin();
-                if (iterator == args.end()) {
-                    return usage(cmdExec);
-                }
-                dir = *iterator;
-                ++iterator;
-                if (iterator != args.end()) {
-                    return usage(cmdExec);
-                }
-            }
-            return Chroot(dir);
-        }
-        case Command::NONE:
-            break;
-    }
-    return 0;
-}
-
 static std::map<std::string,Command> GetInitialCmdMap() {
     std::map<std::string,Command> cmdMap{};
     cmdMap.insert_or_assign("list-groups", Command::LIST_GROUPS);
@@ -783,38 +362,450 @@ Command GetCmd(std::vector<std::string> &args)
     return Command::NONE;
 }
 
-int cppmain(const std::string &cmd, const std::vector<std::string> &i_args) {
-    auto ports = Ports::Create(portdir);
-    std::vector<std::string> args{i_args};
-    auto command = GetCmd(args);
-    if (command == Command::NONE) {
-        return usage(cmd);
+class BmApp : public App {
+private:
+    Command command;
+public:
+    BmApp(int argc, const char * const argv[]) : App(argc, argv) {}
+    int usage() override;
+    void ConsumeCmd(std::vector<std::string> &args) override;
+    bool IsValidCmd() override;
+    int RunCmd(Ports &ports, std::vector<std::string> &args) override;
+};
+
+int BmApp::usage() {
+    std::cerr << "Usage:\n " << cmd << " list-groups\n " << cmd << " list-ports <group-name>\n"
+              << " " << cmd << " list-builds <group/port>\n " << cmd << " list-installed <root-dir>\n"
+              << " " << cmd << " clean <group/port/build>\n " << cmd << " fetch <group/port/build>\n"
+              << " " << cmd << " extract <group/port/build>\n " << cmd << " configure <group/port/build>\n"
+              << " " << cmd << " build <group/port/build>\n " << cmd << " install <group/port/build>\n"
+              << " " << cmd << " package <group/port/build>\n "
+              << " " << cmd << " unpack <file> <target-dir>\n" << cmd << " replace <group/port/build> <file> <target-dir>\n"
+              << " " << cmd << " register <file> <target-dir>\n " << cmd << " find <pkg> <root-dir>\n"
+              << " " << cmd << " verify <pkg> <root-dir>\n " << cmd << " uninstall <pkg> <root-dir>\n"
+              << " " << cmd << " unregister <pkg> <root-dir>\n " << cmd << " rdep <pkg> <root-dir>\n"
+              << " " << cmd << " files <pkg> <root-dir>\n"
+              << " " << cmd << " rebootstrap <group/port/build>\n " << cmd << " bootstrapshell <group/port/build>\n"
+              << " " << cmd << " chroot <dir>\n";
+    return 1;
+}
+
+void BmApp::ConsumeCmd(std::vector<std::string> &args) {
+    command = GetCmd(args);
+}
+
+bool BmApp::IsValidCmd() {
+    return command != Command::NONE;
+}
+
+int BmApp::RunCmd(Ports &ports, std::vector<std::string> &args) {
+    switch (command) {
+        case Command::LIST_GROUPS:
+            if (args.begin() != args.end()) {
+                return usage();
+            }
+            return ListGroups(ports);
+        case Command::LIST_PORTS: {
+            std::string groupName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                groupName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return ListPorts(ports, groupName);
+        }
+        case Command::LIST_BUILDS: {
+            std::string portName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                portName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return ListBuilds(ports, portName);
+        }
+        case Command::LIST_INSTALLED: {
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return ListInstalled(rootDir);
+        }
+        case Command::CLEAN: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Clean(ports, buildName);
+        }
+        case Command::FETCH: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Fetch(ports, buildName);
+        }
+        case Command::EXTRACT: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Extract(ports, buildName);
+        }
+        case Command::CONFIGURE: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Configure(ports, buildName);
+        }
+        case Command::BUILD: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Make(ports, buildName);
+        }
+        case Command::INSTALL: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Install(ports, buildName);
+        }
+        case Command::PACKAGE: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Package(ports, buildName);
+        }
+        case Command::UNPACK: {
+            std::string filename{};
+            std::string targetDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                filename = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                targetDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Unpack(filename, targetDir);
+        }
+        case Command::REPLACE: {
+            std::string subject{};
+            std::string filename{};
+            std::string targetDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                subject = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                filename = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                targetDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Replace(subject, filename, targetDir);
+        }
+        case Command::REGISTER: {
+            std::string filename{};
+            std::string targetDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                filename = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                targetDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Register(filename, targetDir);
+        }
+        case Command::FIND: {
+            std::string port{};
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                port = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Find(port, rootDir);
+        }
+        case Command::VERIFY: {
+            std::string port{};
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                port = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Verify(port, rootDir);
+        }
+        case Command::UNINSTALL: {
+            std::string port{};
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                port = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Uninstall(port, rootDir);
+        }
+        case Command::UNREGISTER: {
+            std::string port{};
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                port = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Unregister(port, rootDir);
+        }
+        case Command::RDEP: {
+            std::string port{};
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                port = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Rdep(port, rootDir);
+        }
+        case Command::FILES: {
+            std::string port{};
+            std::string rootDir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                port = *iterator;
+                ++iterator;
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                rootDir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Files(port, rootDir);
+        }
+        case Command::REBOOTSTRAP: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Rebootstrap(ports, buildName);
+        }
+        case Command::BOOTSTRAPSHELL: {
+            std::string buildName{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                buildName = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return BootstrapShell(ports, buildName);
+        }
+        case Command::CHROOT: {
+            std::string dir{};
+            {
+                auto iterator = args.begin();
+                if (iterator == args.end()) {
+                    return usage();
+                }
+                dir = *iterator;
+                ++iterator;
+                if (iterator != args.end()) {
+                    return usage();
+                }
+            }
+            return Chroot(dir);
+        }
+        case Command::NONE:
+            break;
     }
-    try {
-        return RunCmd(cmd, *ports, command, args);
-    } catch (const std::exception &e) {
-        const auto *what = e.what();
-        std::cerr << "error: " << (what != nullptr ? what : "std::exception(what=nullptr)") << "\n";
-        return 1;
-    }
+    return 0;
 }
 
 extern "C" {
 
 int main(int argc, const char *argv[]) {
-    std::string cmd{};
-    std::vector<std::string> args{};
-    if (argc < 1) {
-        std::cerr << "Unexpected invocation context: argc<1\n";
-        return 1;
-    }
-    cmd.append(argv[0]);
-    args.reserve(argc - 1);
-    for (typeof(argc) i = 1; i < argc; i++) {
-        std::string &arg = args.emplace_back();
-        arg.append(argv[i]);
-    }
-    return cppmain(cmd, args);
+    BmApp app{argc, argv};
+    return app.main();
 }
 
 }
