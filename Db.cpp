@@ -4,6 +4,8 @@
 
 #include "Db.h"
 #include "Installed.h"
+#include <fstream>
+#include <sstream>
 
 class DbException : public std::exception {
     const char *error;
@@ -17,7 +19,7 @@ public:
 Db::Db(const std::filesystem::path &rootpath) {
     path = rootpath / "var" / "lib" / "jpkg";
     if (!exists(path) || !is_directory(path)) {
-        throw DbException("Pkg DB not found");
+        throw DbNotFound();
     }
     std::filesystem::directory_iterator iterator{path};
     for (const auto &item : iterator) {
@@ -213,3 +215,73 @@ Installed DbPort::Find() const {
     return retv;
 }
 
+std::vector<std::string> Db::GetSelectedList() const {
+    std::string filecontents{};
+    {
+        std::ifstream stream{};
+        stream.open(path / "selected.lst", std::ios::in | std::ios::binary);
+        std::size_t sz;
+        {
+            stream.seekg(0, std::ios_base::end);
+            sz = stream.tellg();
+            stream.seekg(0, std::ios_base::beg);
+        }
+        std::stringstream str{};
+        char buf[512];
+        while (stream && !stream.eof()) {
+            auto n = sizeof(buf);
+            if (n > sz) {
+                n = sz;
+            }
+            if (n == 0) {
+                break;
+            }
+            sz -= n;
+            stream.read(buf, (std::streamsize) n);
+            std::string rstr{buf, (std::string::size_type) n};
+            str << rstr;
+        }
+        stream.close();
+        filecontents = str.str();
+    }
+    std::vector<std::string> split{};
+    while (!filecontents.empty()) {
+        auto pos = filecontents.find('\n');
+        if (pos < filecontents.size()) {
+            auto part = filecontents.substr(0, pos);
+            filecontents.erase(0, pos + 1);
+            split.push_back(part);
+        } else {
+            split.push_back(filecontents);
+            filecontents.clear();
+        }
+    }
+    return split;
+}
+
+void Db::WriteSelectedList(const std::vector<std::string> &list) const {
+    auto tmppath = path / "selected.lst.tmp";
+    auto realpath = path / "selected.lst";
+    {
+        std::ofstream stream{};
+        stream.open(path / "selected.lst.tmp", std::ios::out | std::ios::trunc | std::ios::binary);
+        {
+            auto iterator = list.begin();
+            if (iterator != list.end()) {
+                stream << *iterator;
+                ++iterator;
+            }
+            while (iterator != list.end()) {
+                stream << "\n";
+                stream << *iterator;
+                ++iterator;
+            }
+        }
+        stream.close();
+    }
+    std::string tmppathStr = tmppath;
+    std::string realpathStr = realpath;
+    if (rename(tmppathStr.c_str(), realpathStr.c_str()) != 0) {
+        throw DbException("Rename in place new DB failed");
+    }
+}

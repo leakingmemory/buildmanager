@@ -85,6 +85,7 @@ private:
     void ReplaceVars(const std::vector<std::string> &flags, std::string &str) const;
     void ApplyEnv(const std::string &sysroot, std::map<std::string,std::string> &env);
 public:
+    [[nodiscard]] std::string GetGroup() const;
     [[nodiscard]] std::string GetName() const;
     [[nodiscard]] std::string GetVersion() const {
         return version;
@@ -105,6 +106,12 @@ public:
     void Make();
     void Install();
     void Package();
+    [[nodiscard]] std::vector<std::string> GetRdeps() const {
+        return rdep;
+    }
+    [[nodiscard]] std::vector<std::string> GetBdeps() const {
+        return bdep;
+    }
 };
 
 

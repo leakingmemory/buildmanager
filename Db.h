@@ -13,6 +13,13 @@ class DbGroup;
 class DbPort;
 class Installed;
 
+class DbNotFound : public std::exception {
+public:
+    const char * what() const noexcept override {
+        return "Pkg DB not found";
+    }
+};
+
 class PkgNotFound : public std::exception {
 private:
     std::string error;
@@ -47,6 +54,8 @@ public:
     Db(const std::filesystem::path &rootpath);
     std::vector<DbGroup> GetGroups() const ;
     [[nodiscard]] Installed Find(const std::string &port) const;
+    [[nodiscard]] std::vector<std::string> GetSelectedList() const;
+    void WriteSelectedList(const std::vector<std::string> &list) const;
 };
 
 class DbGroup {

@@ -11,6 +11,7 @@
 #include "Db.h"
 #include "Installed.h"
 #include "App.h"
+#include "basiccmd.h"
 
 enum class Command {
     NONE,
@@ -38,51 +39,6 @@ enum class Command {
     BOOTSTRAPSHELL,
     CHROOT
 };
-
-static int ListGroups(Ports &ports) {
-    auto groups = ports.GetGroups();
-    for (const auto &group : groups) {
-        std::cout << group->GetName() << "\n";
-    }
-    return 0;
-}
-
-static int ListPorts(Ports &ports, const std::string &groupName) {
-    auto group = ports.GetGroup(groupName);
-    auto portList = group->GetPorts();
-    for (const auto &port : portList) {
-        std::cout << port->GetName() << "\n";
-    }
-    return 0;
-}
-
-static int ListBuilds(Ports &ports, const std::string &portName) {
-    auto port = ports.GetPort(portName);
-    if (!port) {
-        std::cerr << "Error: Port was not found: " << portName << "\n";
-        return 1;
-    }
-    auto builds = port->GetBuilds();
-    for (const auto &build : builds) {
-        std::cout << build.GetName() << " " << build.GetVersion() << "\n";
-    }
-    return 0;
-}
-
-static int ListInstalled(const std::string &rootDir) {
-    Db db{rootDir};
-    auto groups = db.GetGroups();
-    for (const auto &group : groups) {
-        auto ports = group.GetPorts();
-        for (const auto &port : ports) {
-            auto versions = port.GetVersions();
-            for (const auto &version : versions) {
-                std::cout << version.GetGroup() << "/" << version.GetName() << "/" << version.GetVersion() << "\n";
-            }
-        }
-    }
-    return 0;
-}
 
 static int Fetch(Ports &ports, const std::string &buildName) {
     Build build = GetBuild(ports, buildName, {});
@@ -379,8 +335,8 @@ int BmApp::usage() {
               << " " << cmd << " clean <group/port/build>\n " << cmd << " fetch <group/port/build>\n"
               << " " << cmd << " extract <group/port/build>\n " << cmd << " configure <group/port/build>\n"
               << " " << cmd << " build <group/port/build>\n " << cmd << " install <group/port/build>\n"
-              << " " << cmd << " package <group/port/build>\n "
-              << " " << cmd << " unpack <file> <target-dir>\n" << cmd << " replace <group/port/build> <file> <target-dir>\n"
+              << " " << cmd << " package <group/port/build>\n"
+              << " " << cmd << " unpack <file> <target-dir>\n " << cmd << " replace <group/port/build> <file> <target-dir>\n"
               << " " << cmd << " register <file> <target-dir>\n " << cmd << " find <pkg> <root-dir>\n"
               << " " << cmd << " verify <pkg> <root-dir>\n " << cmd << " uninstall <pkg> <root-dir>\n"
               << " " << cmd << " unregister <pkg> <root-dir>\n " << cmd << " rdep <pkg> <root-dir>\n"

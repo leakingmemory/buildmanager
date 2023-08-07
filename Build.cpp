@@ -961,6 +961,10 @@ void Build::ApplyEnv(const std::string &sysroot, std::map<std::string,std::strin
     }
 }
 
+std::string Build::GetGroup() const {
+    return port->GetGroup()->GetName();
+}
+
 std::string Build::GetName() const {
     return port->GetName();
 }
