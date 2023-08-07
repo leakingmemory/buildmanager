@@ -507,6 +507,97 @@ int Install(Ports &ports, const std::vector<std::string> &installs) {
     return 0;
 }
 
+std::string GetPkgNameWithoutVersion(const std::string &pkgname) {
+    std::filesystem::path p{pkgname};
+    auto iterator = p.begin();
+    if (iterator == p.end()) {
+        std::cerr << "Invalid pkg name: " << pkgname << "\n";
+        throw JpkgException("Invalid pkg name");
+    }
+    std::string group = *iterator;
+    ++iterator;
+    if (iterator == p.end()) {
+        std::cerr << "Invalid pkg name: " << pkgname << "\n";
+        throw JpkgException("Invalid pkg name");
+    }
+    std::string name = *iterator;
+    ++iterator;
+    if (iterator == p.end()) {
+        std::cerr << "Invalid pkg name: " << pkgname << "\n";
+        throw JpkgException("Invalid pkg name");
+    }
+    ++iterator;
+    if (iterator != p.end()) {
+        std::cerr << "Invalid pkg name: " << pkgname << "\n";
+        throw JpkgException("Invalid pkg name");
+    }
+    std::string res{group};
+    res.append("/");
+    res.append(name);
+    return res;
+}
+
+int Uninstall(const std::vector<std::string> &uninstalls) {
+    Db db{rootdir};
+    auto worldmap = Worldmap(db);
+    std::vector<std::string> unselect{};
+    {
+        std::vector<std::string> fullids{};
+        for (const auto &uninst : uninstalls) {
+            if (worldmap.find(uninst) != worldmap.end()) {
+                fullids.push_back(uninst);
+            } else {
+                unselect.push_back(uninst);
+            }
+        }
+        for (const auto &uninst : fullids) {
+            unselect.push_back(GetPkgNameWithoutVersion(uninst));
+        }
+    }
+    auto selected = db.GetSelectedList();
+    for (const auto &unsel : unselect) {
+        if (std::find(selected.begin(), selected.end(), unsel) == selected.end()) {
+            std::cerr << "Not selected: " << unsel << " - can't uninstall\n";
+            throw JpkgException("Requested uninstall is not selected");
+        }
+    }
+    for (const auto &unsel : unselect) {
+        std::cout << " ===> Deselecting " << unsel << "\n";
+        auto iterator = std::find(selected.begin(), selected.end(), unsel);
+        if (iterator == selected.end()) {
+            std::cerr << "Not selected: " << unsel << " - can't uninstall (rolled back)\n";
+            throw JpkgException("Requested uninstall is not selected");
+        }
+        selected.erase(iterator);
+    }
+    db.WriteSelectedList(selected);
+    bool cont{true};
+    do {
+        std::vector<Installed> uninstalls{};
+        auto leafs = Leafs(worldmap);
+        for (const auto &leaf : leafs) {
+            auto selname = GetPkgNameWithoutVersion(leaf);
+            if (std::find(selected.begin(), selected.end(), selname) == selected.end()) {
+                auto iterator = worldmap.find(leaf);
+                if (iterator == worldmap.end()) {
+                    std::cerr << "Pkg " << leaf << " not found in transaction world set\n";
+                    throw JpkgException("Unexpectedly gone pkg");
+                }
+                uninstalls.push_back(iterator->second);
+                worldmap.erase(iterator);
+            }
+        }
+        for (const auto &installed : uninstalls) {
+            std::cout << " ===> Uninstalling " << installed.GetGroup() << "/"
+                      << installed.GetName() << "/" << installed.GetVersion() << "\n";
+            installed.Uninstall(rootdir);
+            installed.Unregister();
+        }
+        cont = !uninstalls.empty();
+    } while (cont);
+    return 0;
+}
+
 enum class Command {
     NONE,
     LIST_GROUPS,
@@ -517,7 +608,8 @@ enum class Command {
     SELECTED,
     REVDEPS,
     LEAFS,
-    INSTALL
+    INSTALL,
+    UNINSTALL
 };
 
 static std::map<std::string,Command> GetInitialCmdMap() {
@@ -531,6 +623,7 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("revdeps", Command::REVDEPS);
     cmdMap.insert_or_assign("leafs", Command::LEAFS);
     cmdMap.insert_or_assign("install", Command::INSTALL);
+    cmdMap.insert_or_assign("uninstall", Command::UNINSTALL);
     return cmdMap;
 }
 
@@ -570,6 +663,7 @@ int JpkgApp::usage() {
     std::cerr << " " << cmd << " revdeps <group/port>\n";
     std::cerr << " " << cmd << " leafs\n";
     std::cerr << " " << cmd << " install [<ports...>]\n";
+    std::cerr << " " << cmd << " uninstall [<pkgs...>]\n";
     return 1;
 }
 
@@ -671,6 +765,17 @@ int JpkgApp::RunCmd(Ports &ports, std::vector<std::string> &args) {
                 }
             }
             return Install(ports, add);
+        }
+        case Command::UNINSTALL: {
+            std::vector<std::string> deselect{};
+            {
+                auto iterator = args.begin();
+                while (iterator != args.end()) {
+                    deselect.push_back(*iterator);
+                    ++iterator;
+                }
+            }
+            return Uninstall(deselect);
         }
     }
     return 0;
