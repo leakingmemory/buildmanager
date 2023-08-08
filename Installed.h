@@ -30,6 +30,7 @@ private:
     std::vector<std::string> rdep;
     std::filesystem::path path;
 public:
+    Installed() : group(), name(), version(), files(), rdep(), path() {}
     Installed(const std::filesystem::path &dbpath, const std::string &group, const std::string &name, const std::string &version);
     static std::vector<InstalledFile> GetFiles(const std::string &files);
     [[nodiscard]] std::vector<InstalledFile> GetFiles() const;

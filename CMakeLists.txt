@@ -10,7 +10,7 @@ add_library(bmcore OBJECT PortGroup.cpp PortGroup.h Ports.cpp Ports.h Port.cpp P
         Distfile.cpp Distfile.h CurlEasy.cpp CurlEasy.h Fork.cpp Fork.h Exec.cpp Exec.h Shell.cpp Shell.h
         Buildenv.cpp Buildenv.h Unpack.cpp Unpack.h sha2alg.cpp sha2alg.h endian.h FindLib.cpp FindLib.h
         Sysconfig.cpp Sysconfig.h Mount.cpp Mount.h Chroot.cpp Chroot.h Db.cpp Db.h
-        Installed.cpp Installed.h)
+        Installed.cpp Installed.h versioncmp.cpp versioncmp.h)
 target_include_directories(bmcore PRIVATE ${nlohmann_json_INCLUDE_DIRS})
 target_include_directories(bmcore PRIVATE ${CURL_INCLUDE_DIR})
 

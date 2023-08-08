@@ -12,6 +12,7 @@
 #include "Build.h"
 #include "Fork.h"
 #include "Unpack.h"
+#include "versioncmp.h"
 #include <iostream>
 #include <map>
 #include <optional>
@@ -185,11 +186,11 @@ enum class DeporderingStage {
     BDEPS
 };
 
-std::vector<std::string> GenerateDepordering(Ports &ports, std::vector<std::string> add) {
+std::vector<std::string> GenerateDepordering(Ports &ports, std::vector<std::string> add, std::vector<std::tuple<std::string,std::string>> replace) {
     constexpr std::vector<std::string>::size_type fuse = 100000;
     std::vector<std::string> buildOrder{};
     std::vector<std::string> world{};
-    std::vector<std::string> pendingDeps{};
+    std::vector<std::tuple<std::string,std::string>> pendingDeps{};
     std::map<std::string,DeporderingStage> trail{};
     try {
         std::vector<std::tuple<std::string,std::string>> rdeps{};
@@ -218,7 +219,7 @@ std::vector<std::string> GenerateDepordering(Ports &ports, std::vector<std::stri
             const auto &dep = std::get<1>(deptuple);
             auto found = FindInstalled(world, dep);
             if (!found) {
-                pendingDeps.push_back(dep);
+                pendingDeps.emplace_back("", dep);
             }
         }
     } catch (const DbNotFound &dbNotFound) {
@@ -229,8 +230,18 @@ std::vector<std::string> GenerateDepordering(Ports &ports, std::vector<std::stri
         }
         auto found = FindInstalled(world, dep);
         if (!found) {
-            pendingDeps.push_back(dep);
+            pendingDeps.emplace_back("", dep);
         }
+    }
+    for (const auto &repl : replace) {
+        if (pendingDeps.size() > fuse || buildOrder.size() > fuse) {
+            throw JpkgException("Fuse blown");
+        }
+        auto found = FindInstalled(world, std::get<0>(repl));
+        if (!found) {
+            throw JpkgException("Requested replace of not installed");
+        }
+        pendingDeps.emplace_back(std::get<0>(repl), std::get<1>(repl));
     }
     while (pendingDeps.size() > 0) {
         auto dep = *(pendingDeps.begin());
@@ -239,8 +250,8 @@ std::vector<std::string> GenerateDepordering(Ports &ports, std::vector<std::stri
         std::string port{};
         std::string version{};
         std::string pkgName{};
-        bool found = Depstrs(world, dep, depstr, group, port, version, pkgName);
-        if (found) {
+        bool found = Depstrs(world, std::get<1>(dep), depstr, group, port, version, pkgName);
+        if (found && std::get<1>(dep) != std::get<0>(dep)) {
             pendingDeps.erase(pendingDeps.begin());
         } else {
             auto portGroup = ports.GetGroup(group);
@@ -319,7 +330,7 @@ std::vector<std::string> GenerateDepordering(Ports &ports, std::vector<std::stri
                 pendingDeps.erase(pendingDeps.begin());
             } else {
                 for (const auto &dep : notFounds) {
-                    pendingDeps.insert(pendingDeps.begin(), dep);
+                    pendingDeps.insert(pendingDeps.begin(), std::make_tuple("", dep));
                 }
             }
         }
@@ -328,7 +339,7 @@ std::vector<std::string> GenerateDepordering(Ports &ports, std::vector<std::stri
 }
 
 int Depordering(Ports &ports, std::vector<std::string> add) {
-    auto depordering = GenerateDepordering(ports, add);
+    auto depordering = GenerateDepordering(ports, add, {});
     for (const auto &dep : depordering) {
         std::cout << dep << "\n";
     }
@@ -444,7 +455,7 @@ int Install(Ports &ports, const std::vector<std::string> &installs) {
         }
         requestedBuilds.push_back(build);
     }
-    auto depordering = GenerateDepordering(ports, installs);
+    auto depordering = GenerateDepordering(ports, installs, {});
     std::vector<Build> builds{};
     for (const auto &dep : depordering) {
         auto build = GetBuild(ports, dep, {});
@@ -598,6 +609,316 @@ int Uninstall(const std::vector<std::string> &uninstalls) {
     return 0;
 }
 
+class UnsolvableException : public std::exception {
+};
+
+struct PotentialUpdateWithScore {
+    int score{0};
+    std::map<std::string,Build> resultingUpdates{};
+    std::vector<std::string> resultingDeporder{};
+};
+
+std::vector<std::string> TrySolve(Ports &ports, const std::map<std::string,Installed> &origWorld, const std::map<std::string,Build> &acceptedUpdates) {
+    std::vector<std::string> mainOrder{};
+    {
+        std::vector<std::vector<std::string>> depshells;
+        std::map<std::string, Installed> world{origWorld};
+        while (!world.empty()) {
+            auto leafs = Leafs(world);
+            if (!leafs.empty()) {
+                for (const auto &leaf: leafs) {
+                    auto iterator = world.find(leaf);
+                    if (iterator == world.end()) {
+                        throw JpkgException("world leaf not a leaf");
+                    }
+                    world.erase(iterator);
+                }
+                depshells.push_back(leafs);
+            } else {
+                std::vector<std::string> remaining{};
+                for (const auto &rem: world) {
+                    remaining.push_back(rem.first);
+                }
+                world.clear();
+                depshells.push_back(remaining);
+            }
+        }
+        std::reverse(depshells.begin(), depshells.end());
+        for (const auto &shell: depshells) {
+            for (const auto &pkg: shell) {
+                if (acceptedUpdates.find(pkg) != acceptedUpdates.end()) {
+                    mainOrder.push_back(pkg);
+                }
+            }
+        }
+    }
+    std::vector<std::tuple<std::string,std::string>> replace{};
+    for (const auto &pkg : mainOrder) {
+        auto iterator = acceptedUpdates.find(pkg);
+        if (iterator == acceptedUpdates.end()) {
+            throw JpkgException("In main order list, but was not in the accepted list");
+        }
+        auto &build = iterator->second;
+        std::string name{build.GetGroup()};
+        name.append("/");
+        name.append(build.GetName());
+        name.append("/");
+        name.append(build.GetVersion());
+        replace.emplace_back(pkg, name);
+    }
+    return GenerateDepordering(ports, {}, replace);
+}
+
+int TryUpdate(Ports &ports, const std::map<std::string,Installed> &origWorld, const std::map<std::string,std::vector<Build>> &origUpdates, const std::map<std::string,Build> &acceptedUpdates, std::map<std::string,Build> &resultingUpdates, std::vector<std::string> &resultingDeporder) {
+    std::vector<PotentialUpdateWithScore> potentialUpdatesWithScore{};
+    {
+        std::map<std::string, std::vector<Build>> updates{origUpdates};
+        std::vector<Build> potentialUpdates{};
+        std::string pkgName{};
+        {
+            auto iterator = updates.begin();
+            if (iterator == updates.end()) {
+                resultingDeporder = TrySolve(ports, origWorld, acceptedUpdates);
+                resultingUpdates = acceptedUpdates;
+                return 0;
+            }
+            pkgName = iterator->first;
+            potentialUpdates = iterator->second;
+            updates.erase(iterator);
+        }
+        for (const auto &potentialUpdate: potentialUpdates) {
+            PotentialUpdateWithScore potentialUpdateWithScore{};
+            std::map<std::string,Build> newAcceptedUpdates{acceptedUpdates};
+            {
+                newAcceptedUpdates.insert_or_assign(pkgName, potentialUpdate);
+            }
+            try {
+                potentialUpdateWithScore.score = 1 + TryUpdate(ports, origWorld, updates, newAcceptedUpdates, potentialUpdateWithScore.resultingUpdates, potentialUpdateWithScore.resultingDeporder);
+                potentialUpdateWithScore.resultingUpdates.insert_or_assign(pkgName, potentialUpdate);
+                potentialUpdatesWithScore.push_back(potentialUpdateWithScore);
+            } catch (UnsolvableException &e) {
+                continue;
+            }
+        }
+    }
+    if (potentialUpdatesWithScore.empty()) {
+        throw UnsolvableException();
+    }
+    std::sort(potentialUpdatesWithScore.begin(), potentialUpdatesWithScore.end(), [] (PotentialUpdateWithScore &a, PotentialUpdateWithScore &b) {
+        return a.score > b.score;
+    });
+    auto result = *(potentialUpdatesWithScore.begin());
+    resultingUpdates = result.resultingUpdates;
+    resultingDeporder = result.resultingDeporder;
+    return result.score;
+}
+
+class UpdateOperation {
+protected:
+    Build build;
+public:
+    UpdateOperation(const Build &build) : build(build) {}
+    void Clean();
+    void Fetch();
+    virtual void DoUpdate() = 0;
+};
+
+class UpdateReplaceOperation : public UpdateOperation {
+private:
+    Installed old;
+public:
+    UpdateReplaceOperation(const Installed &old, const Build &newBuild) : UpdateOperation(newBuild), old(old) {}
+    void DoUpdate() override;
+};
+
+class UpdateInstallOperation : public UpdateOperation {
+private:
+public:
+    UpdateInstallOperation(const Build &build) : UpdateOperation(build) {}
+    void DoUpdate() override;
+};
+
+void UpdateOperation::Clean() {
+    build.Clean();
+}
+
+void UpdateOperation::Fetch() {
+    build.Fetch();
+}
+
+void UpdateReplaceOperation::DoUpdate() {
+    Tempdir tempdir{};
+    std::string tempdirName = tempdir.GetName();
+    Fork fork{[this, &tempdirName]() {
+        if (chdir(tempdirName.c_str()) != 0) {
+            throw JpkgException("Failed to changedir to tmpdir");
+        }
+        build.Package();
+        build.Clean();
+        std::string packageFilename{build.GetName()};
+        packageFilename.append("-");
+        packageFilename.append(build.GetVersion());
+        packageFilename.append(".pkg");
+        std::cout << " ==> Replacing " << old.GetGroup() << "/" << old.GetName() << "/"
+            << old.GetVersion() << " with " << packageFilename << "\n";
+        Unpack unpack{packageFilename};
+        unpack.Replace(old, "/");
+        if (unlink(packageFilename.c_str()) != 0) {
+            throw JpkgException("Failed to delete tmp pkg");
+        }
+        return 0;
+    }};
+    fork.Require();
+}
+
+void UpdateInstallOperation::DoUpdate() {
+    Tempdir tempdir{};
+    std::string tempdirName = tempdir.GetName();
+    Fork fork{[this, &tempdirName]() {
+        if (chdir(tempdirName.c_str()) != 0) {
+            throw JpkgException("Failed to changedir to tmpdir");
+        }
+        build.Package();
+        build.Clean();
+        std::string packageFilename{build.GetName()};
+        packageFilename.append("-");
+        packageFilename.append(build.GetVersion());
+        packageFilename.append(".pkg");
+        std::cout << " ==> Installing " << packageFilename << "\n";
+        Unpack unpack{packageFilename, "/"};
+        unpack.Register("/");
+        if (unlink(packageFilename.c_str()) != 0) {
+            throw JpkgException("Failed to delete tmp pkg");
+        }
+        return 0;
+    }};
+    fork.Require();
+}
+
+int Update(Ports &ports) {
+    Db db{rootdir};
+    auto worldmap = Worldmap(db);
+    std::vector<std::shared_ptr<UpdateOperation>> updateOps{};
+    {
+        std::map<std::string, std::vector<Build>> updates{};
+        for (const auto &pair: worldmap) {
+            std::string groupName{};
+            std::string portName{};
+            std::string installedVersion{};
+            {
+                const auto &installed = pair.second;
+                groupName = installed.GetGroup();
+                portName = installed.GetName();
+                installedVersion = installed.GetVersion();
+            }
+            std::shared_ptr<Port> port{};
+            {
+                auto group = ports.GetGroup(groupName);
+                if (!group) {
+                    std::cerr << "warning: corresponding port for " << pair.first << " does not exist\n";
+                    continue;
+                }
+                port = group->GetPort(portName);
+                if (!port) {
+                    std::cerr << "warning: corresponding port for " << pair.first << " does not exist\n";
+                    continue;
+                }
+            }
+            auto versions = port->GetBuilds();
+            if (versions.empty()) {
+                std::cerr << "warning: corresponding builds for " << pair.first << " does not exist\n";
+                continue;
+            }
+            std::sort(versions.begin(), versions.end(), [](Build &a, Build &b) {
+                auto cmp = versioncmp(b.GetVersion(), a.GetVersion());
+                return cmp < 0;
+            });
+            std::vector<Build> potentialUpdates{};
+            for (const auto &build: versions) {
+                auto cmp = versioncmp(build.GetVersion(), installedVersion);
+                if (cmp <= 0) {
+                    break;
+                }
+                std::cout << " ===> Potential update found: " << pair.first << " to " << build.GetVersion() << "\n";
+                potentialUpdates.push_back(build);
+            }
+            if (!potentialUpdates.empty()) {
+                updates.insert_or_assign(pair.first, potentialUpdates);
+            }
+        }
+        if (!updates.empty()) {
+            std::map<std::string, Build> resultingUpdates{};
+            std::vector<std::string> deporder{};
+            try {
+                if (TryUpdate(ports, worldmap, updates, {}, resultingUpdates, deporder) == 0) {
+                    std::cerr << "warning: updates found, but couldn't solve dependencies\n";
+                }
+                std::map<std::string, std::string> newToOldMap{};
+                for (const auto &update: resultingUpdates) {
+                    auto &build = update.second;
+                    std::string newName{build.GetGroup()};
+                    newName.append("/");
+                    newName.append(build.GetName());
+                    newName.append("/");
+                    newName.append(build.GetVersion());
+                    newToOldMap.insert_or_assign(newName, update.first);
+                }
+                for (const auto &dep: deporder) {
+                    std::string oldName{};
+                    {
+                        auto iterator = newToOldMap.find(dep);
+                        if (iterator != newToOldMap.end()) {
+                            oldName = iterator->second;
+                        }
+                    }
+                    if (!oldName.empty()) {
+                        std::cout << " * Update " << oldName << " -> " << dep << "\n";
+                        Installed old{};
+                        {
+                            auto iterator = worldmap.find(oldName);
+                            if (iterator == worldmap.end()) {
+                                throw JpkgException("Old pkg not found");
+                            }
+                            old = iterator->second;
+                        }
+                        Build build{};
+                        {
+                            auto iterator = resultingUpdates.find(oldName);
+                            if (iterator == resultingUpdates.end()) {
+                                throw JpkgException("Old build not in map");
+                            }
+                            build = iterator->second;
+                        }
+                        if (!build.IsValid()) {
+                            throw JpkgException("Build not valid");
+                        }
+                        updateOps.push_back(std::make_shared<UpdateReplaceOperation>(old, build));
+                    } else {
+                        std::cout << " * Install " << dep << "\n";
+                        auto build = GetBuild(ports, dep, {});
+                        if (!build.IsValid()) {
+                            throw JpkgException("Build not found");
+                        }
+                        updateOps.push_back(std::make_shared<UpdateInstallOperation>(build));
+                    }
+                }
+            } catch (UnsolvableException &e) {
+                std::cerr << "warning: updates found, but couldn't solve dependencies (unsolvable)\n";
+            }
+        }
+    }
+    for (const auto &update : updateOps) {
+        update->Clean();
+    }
+    for (const auto &update : updateOps) {
+        update->Fetch();
+    }
+    for (const auto &update : updateOps) {
+        update->DoUpdate();
+    }
+    return 0;
+}
+
 enum class Command {
     NONE,
     LIST_GROUPS,
@@ -609,7 +930,8 @@ enum class Command {
     REVDEPS,
     LEAFS,
     INSTALL,
-    UNINSTALL
+    UNINSTALL,
+    UPDATE
 };
 
 static std::map<std::string,Command> GetInitialCmdMap() {
@@ -624,6 +946,7 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("leafs", Command::LEAFS);
     cmdMap.insert_or_assign("install", Command::INSTALL);
     cmdMap.insert_or_assign("uninstall", Command::UNINSTALL);
+    cmdMap.insert_or_assign("update", Command::UPDATE);
     return cmdMap;
 }
 
@@ -664,6 +987,7 @@ int JpkgApp::usage() {
     std::cerr << " " << cmd << " leafs\n";
     std::cerr << " " << cmd << " install [<ports...>]\n";
     std::cerr << " " << cmd << " uninstall [<pkgs...>]\n";
+    std::cerr << " " << cmd << " update\n";
     return 1;
 }
 
@@ -776,6 +1100,12 @@ int JpkgApp::RunCmd(Ports &ports, std::vector<std::string> &args) {
                 }
             }
             return Uninstall(deselect);
+        }
+        case Command::UPDATE: {
+            if (args.begin() != args.end()) {
+                return usage();
+            }
+            return Update(ports);
         }
     }
     return 0;
