@@ -766,7 +766,7 @@ void UpdateReplaceOperation::DoUpdate() {
         packageFilename.append(".pkg");
         std::cout << " ==> Replacing " << old.GetGroup() << "/" << old.GetName() << "/"
             << old.GetVersion() << " with " << packageFilename << "\n";
-        Unpack unpack{packageFilename};
+        Unpack unpack{packageFilename, "/"};
         unpack.Replace(old, "/");
         if (unlink(packageFilename.c_str()) != 0) {
             throw JpkgException("Failed to delete tmp pkg");
