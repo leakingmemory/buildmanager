@@ -179,5 +179,24 @@ void Distfile::Extract(const Ports &ports, const path &iBuildDir) const {
         fork.Require();
         return;
     }
+    if (name.ends_with(".tar.bz2")) {
+        Fork fork{[filename, buildDir] () {
+            {
+                std::string dir = buildDir.string();
+                if (chdir(dir.c_str()) != 0) {
+                    std::cerr << "chdir: build dir: " << dir << "\n";
+                    return 1;
+                }
+            }
+            Exec exec{"tar"};
+            std::vector<std::string> args{};
+            args.push_back("xjf");
+            args.push_back(filename);
+            auto env = Exec::getenv();
+            exec.exec(args, env);
+            return 0;
+        }};
+        return;
+    }
     throw DistfileException("Unknown format to extract");
 }
