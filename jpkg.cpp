@@ -269,6 +269,10 @@ std::vector<std::string> GenerateDepordering(Ports &ports, std::vector<std::stri
                 build = portObj->GetBuild(version, {});
             } else {
                 auto builds = portObj->GetBuilds();
+                std::sort(builds.begin(), builds.end(), [](Build &a, Build &b) {
+                    auto cmp = versioncmp(b.GetVersion(), a.GetVersion());
+                    return cmp < 0;
+                });
                 auto iterator = builds.begin();
                 if (iterator == builds.end()) {
                     std::cerr << depstr << " not found\n";
