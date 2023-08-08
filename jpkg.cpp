@@ -18,6 +18,7 @@
 #include <optional>
 extern "C" {
 #include <unistd.h>
+#include <sys/stat.h>
 }
 
 const char *rootdir = "/";
@@ -923,6 +924,108 @@ int Update(Ports &ports) {
     return 0;
 }
 
+std::vector<std::filesystem::path> GetSubtreeDirectories(std::filesystem::path &root) {
+    std::vector<std::filesystem::path> result{};
+    std::filesystem::directory_iterator iterator{root};
+    for (const auto &item : iterator) {
+        if (item.is_directory()) {
+            std::filesystem::path fullpath = item.path();
+            std::filesystem::path filename = fullpath.filename();
+            if (filename == "." || filename == "..") {
+                continue;
+            }
+            auto subitems = GetSubtreeDirectories(fullpath);
+            for (const auto &subitem : subitems) {
+                result.push_back(filename / subitem);
+            }
+            result.push_back(filename);
+        }
+    }
+    return result;
+}
+
+int Distclean(Ports &ports) {
+    std::vector<std::filesystem::path> distfiles{};
+    std::vector<std::filesystem::path> distsubdirs{};
+    auto distfilesRoot = ports.GetRoot() / "distfiles";
+    distsubdirs = GetSubtreeDirectories(distfilesRoot);
+    for (auto &distsubdir : distsubdirs) {
+        auto fullpath = distfilesRoot / distsubdir;
+        std::filesystem::directory_iterator iterator{fullpath};
+        for (const auto &fileitem : iterator) {
+            if (fileitem.is_regular_file()) {
+                distfiles.push_back(distsubdir / fileitem.path().filename());
+            }
+        }
+    }
+    {
+        std::filesystem::directory_iterator iterator{distfilesRoot};
+        for (const auto &fileitem : iterator) {
+            if (fileitem.is_regular_file()) {
+                distfiles.push_back(fileitem.path().filename());
+            }
+        }
+    }
+    {
+        std::vector<std::filesystem::path> knownDistfiles{};
+        {
+            auto groups = ports.GetGroups();
+            for (const auto &group: groups) {
+                if (!group->IsValid()) {
+                    continue;
+                }
+                auto ports = group->GetPorts();
+                for (const auto &port: ports) {
+                    if (!port->IsValid()) {
+                        continue;
+                    }
+                    auto builds = port->GetBuilds();
+                    for (const auto &build: builds) {
+                        if (!build.IsValid()) {
+                            continue;
+                        }
+                        auto portDistfiles = build.GetDistfiles();
+                        for (const auto &distfile: portDistfiles) {
+                            std::filesystem::path p{distfile.GetName()};
+                            knownDistfiles.push_back(p);
+                        }
+                    }
+                }
+            }
+        }
+        for (auto &p: knownDistfiles) {
+            auto iterator = std::find(distfiles.begin(), distfiles.end(), p);
+            if (iterator != distfiles.end()) {
+                distfiles.erase(iterator);
+            }
+        }
+    }
+    std::size_t bytes{0};
+    for (const auto &distfile : distfiles) {
+        std::string distfileStr = distfilesRoot / distfile;
+        struct stat st;
+        if (stat(distfileStr.c_str(), &st) != 0) {
+            std::cerr << "warning: failed stat: " << distfileStr << "\n";
+            continue;
+        }
+        std::cout << "Removing " << distfileStr << " " << st.st_size << " bytes.\n";
+        if (unlink(distfileStr.c_str())) {
+            std::cerr << "warning: failed unlink: " << distfileStr << "\n";
+            continue;
+        }
+        bytes += st.st_size;
+    }
+    for (auto &distsubdir : distsubdirs) {
+        auto fullpath = distfilesRoot / distsubdir;
+        std::error_code ec;
+        if (std::filesystem::remove(fullpath, ec)) {
+            std::cout << "Remove empty directory " << distsubdir << "\n";
+        }
+    }
+    std::cout << "Total reclaim distfiles: " << bytes << " bytes.\n";
+    return 0;
+}
+
 enum class Command {
     NONE,
     LIST_GROUPS,
@@ -935,7 +1038,8 @@ enum class Command {
     LEAFS,
     INSTALL,
     UNINSTALL,
-    UPDATE
+    UPDATE,
+    DISTCLEAN
 };
 
 static std::map<std::string,Command> GetInitialCmdMap() {
@@ -951,6 +1055,7 @@ static std::map<std::string,Command> GetInitialCmdMap() {
     cmdMap.insert_or_assign("install", Command::INSTALL);
     cmdMap.insert_or_assign("uninstall", Command::UNINSTALL);
     cmdMap.insert_or_assign("update", Command::UPDATE);
+    cmdMap.insert_or_assign("distclean", Command::DISTCLEAN);
     return cmdMap;
 }
 
@@ -992,6 +1097,7 @@ int JpkgApp::usage() {
     std::cerr << " " << cmd << " install [<ports...>]\n";
     std::cerr << " " << cmd << " uninstall [<pkgs...>]\n";
     std::cerr << " " << cmd << " update\n";
+    std::cerr << " " << cmd << " distclean\n";
     return 1;
 }
 
@@ -1110,6 +1216,12 @@ int JpkgApp::RunCmd(Ports &ports, std::vector<std::string> &args) {
                 return usage();
             }
             return Update(ports);
+        }
+        case Command::DISTCLEAN: {
+            if (args.begin() != args.end()) {
+                return usage();
+            }
+            return Distclean(ports);
         }
     }
     return 0;

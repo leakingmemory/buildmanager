@@ -112,6 +112,9 @@ public:
     [[nodiscard]] std::vector<std::string> GetBdeps() const {
         return bdep;
     }
+    [[nodiscard]] std::vector<Distfile> GetDistfiles() const {
+        return distfiles;
+    }
 };
 
 
