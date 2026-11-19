@@ -74,6 +74,8 @@ void Distfile::Fetch(const Ports &ports) const {
             break;
         }
     }
+    std::error_code ec{};
+    std::filesystem::remove(filename, ec);
     throw DistfileException("Distfile download failed");
 }
 

@@ -13,6 +13,7 @@
 #include "Fork.h"
 #include "Unpack.h"
 #include "versioncmp.h"
+#include <algorithm>
 #include <iostream>
 #include <map>
 #include <optional>

@@ -95,6 +95,8 @@ CurlEasy::CurlEasy() : CurlEasyCallbacks(*this), handle(curl_easy_init()),
         write([] (const void *, size_t) { return writeError; })
 {
     SetupHandleDatapointers();
+    // ftp.gnu.org rejects requests without a User-Agent
+    curl_easy_setopt(handle, CURLOPT_USERAGENT, "bm/0.1");
 }
 
 CurlEasy::~CurlEasy() {
