@@ -6,6 +6,8 @@
 extern "C" {
 #include <unistd.h>
 }
+#include <exception>
+#include <string>
 
 class ExecException : public std::exception {
 private:

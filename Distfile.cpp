@@ -12,6 +12,7 @@
 extern "C" {
 #include <unistd.h>
 }
+#include <exception>
 
 using path = std::filesystem::path;
 

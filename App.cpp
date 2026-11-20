@@ -5,6 +5,7 @@
 #include "App.h"
 #include "Ports.h"
 #include <iostream>
+#include <exception>
 
 const char *portdir = "/var/ports";
 

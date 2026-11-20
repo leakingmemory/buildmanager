@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <exception>
 
 class DbGroup;
 class DbPort;

@@ -7,6 +7,7 @@
 
 #include "Fork.h"
 #include <fstream>
+#include <vector>
 
 class Installed;
 

@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <vector>
 #include <functional>
+#include <memory>
+#include <string>
 
 using path = std::filesystem::path;
 

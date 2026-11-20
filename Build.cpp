@@ -23,6 +23,9 @@
 extern "C" {
 #include <unistd.h>
 }
+#include <algorithm>
+#include <exception>
+#include <tuple>
 
 Build GetBuild(Ports &ports, const std::string &buildName, const std::vector<std::string> &flags) {
     std::string groupName{};

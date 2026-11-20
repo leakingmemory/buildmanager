@@ -6,6 +6,7 @@
 #define BM_SHELL_H
 
 #include "Exec.h"
+#include <string>
 
 class Shell {
 private:

@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <map>
 #include "Distfile.h"
+#include <memory>
 
 using path = std::filesystem::path;
 

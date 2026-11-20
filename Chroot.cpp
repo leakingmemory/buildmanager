@@ -9,6 +9,7 @@
 extern "C" {
 #include <unistd.h>
 }
+#include <exception>
 
 class MountCheckException : public std::exception {
 private:

@@ -21,6 +21,8 @@ extern "C" {
 #include <unistd.h>
 #include <sys/stat.h>
 }
+#include <exception>
+#include <tuple>
 
 const char *rootdir = "/";
 

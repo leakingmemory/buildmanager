@@ -10,6 +10,7 @@
 extern "C" {
 #include <unistd.h>
 }
+#include <exception>
 
 class InstalledException : public std::exception {
 private:

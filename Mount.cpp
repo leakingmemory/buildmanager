@@ -4,6 +4,7 @@
 
 #include "Mount.h"
 #include <iostream>
+#include <exception>
 
 class MountException : public std::exception {
 private:

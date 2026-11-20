@@ -6,6 +6,8 @@
 #include "Installed.h"
 #include <fstream>
 #include <sstream>
+#include <exception>
+#include <memory>
 
 class DbException : public std::exception {
     const char *error;

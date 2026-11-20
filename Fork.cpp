@@ -8,6 +8,8 @@ extern "C" {
 #include <sys/wait.h>
 }
 #include <iostream>
+#include <exception>
+#include <utility>
 
 class ForkException : public std::exception {
 private:

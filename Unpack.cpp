@@ -11,6 +11,7 @@
 extern "C" {
 #include <unistd.h>
 }
+#include <exception>
 
 class UnpackException : public std::exception {
 private:

@@ -4,6 +4,7 @@
 
 #include "Ports.h"
 #include "PortGroup.h"
+#include <string>
 
 Ports::Ports(const char *root) : root(root) {
 }

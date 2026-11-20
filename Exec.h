@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <vector>
 #include <map>
+#include <string>
 
 class Exec {
 private:

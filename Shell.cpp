@@ -3,6 +3,7 @@
 //
 
 #include "Shell.h"
+#include <string>
 
 Shell::Shell() : execsh("sh") {
 }

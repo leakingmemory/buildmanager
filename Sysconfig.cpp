@@ -14,6 +14,7 @@ extern "C" {
 #include <sys/stat.h>
 #include <unistd.h>
 }
+#include <exception>
 
 using path = std::filesystem::path;
 

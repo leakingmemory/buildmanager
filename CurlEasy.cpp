@@ -8,6 +8,7 @@ extern "C" {
 }
 #include <algorithm>
 #include <iostream>
+#include <utility>
 
 static size_t ce_writefunc(char *ptr, size_t size, size_t nmemb, void *userdata) {
     auto ce = (CurlEasyCallbacks *) userdata;
